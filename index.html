@@ -447,7 +447,7 @@ function setFilter(f, btn) {
 // After deploying ofo_worker.js, paste your Worker URL here.
 // Example: 'https://ofo-proxy.yourname.workers.dev'
 // Leave as empty string to fall back to direct fetch (CORS may block some pipelines).
-const WORKER_URL = 'https://ofo-proxy.courtenay-schunemann.workers.dev';
+const WORKER_URL = '';
 // ─────────────────────────────────────────────────────────────────────────
 
 async function fetchPipeline(p) {
@@ -473,21 +473,60 @@ async function fetchPipeline(p) {
 function parseNotices(html) {
   const notices = [];
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
-  const text = clean.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ');
-  const chunks = text.split(/[|\n;]/);
-  const ofoRe  = /\b(ofo|operational flow order|flow order|critical.*?day|imbalance.*?warn)\b/i;
-  const watRe  = /\b(watch|alert|caution|potential ofo|may.*?ofo|inventory.*?(high|low))\b/i;
-  const liftRe = /\b(lifted|terminated|cancelled|no.*?ofo|ofo.*?none|rescinded)\b/i;
-  for (const chunk of chunks) {
-    const t = chunk.trim(); if (t.length<30||t.length>400) continue;
+
+  // ── Strategy 1: Look for table rows (Kinder Morgan format) ──
+  // Each <tr> in their notice table contains cells with notice type, subtype, date, and subject
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+  const ofoRe  = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
+  const watRe  = /\b(watch|alert|caution|potential ofo|may.*?ofo|inventory.*?(high|low)|high wind|freeze|cold weather)\b/i;
+  const liftRe = /\b(lifted|terminated|cancelled|no.*?ofo|ofo.*?none|rescinded|resolved)\b/i;
+
+  let rowMatch;
+  while ((rowMatch = rowRe.exec(clean)) !== null) {
+    const rowHtml = rowMatch[1];
+    // Extract all cell text from this row
+    const cells = [];
+    let cellMatch;
+    const cellRe2 = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    while ((cellMatch = cellRe2.exec(rowHtml)) !== null) {
+      const cellText = cellMatch[1].replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+      if (cellText) cells.push(cellText);
+    }
+    if (cells.length < 2) continue;
+    // Join all cells in the row to check for OFO keywords
+    const rowText = cells.join(' | ');
+    if (rowText.length < 10) continue;
     let type = null;
-    if (ofoRe.test(t)&&!liftRe.test(t)) type='ofo';
-    else if (watRe.test(t)) type='watch';
-    else if (liftRe.test(t)) type='info';
+    if (ofoRe.test(rowText) && !liftRe.test(rowText)) type = 'ofo';
+    else if (watRe.test(rowText)) type = 'watch';
+    else if (liftRe.test(rowText)) type = 'info';
     if (!type) continue;
-    notices.push({title:t.slice(0,200),type,date:''});
-    if (notices.length>=8) break;
+    // Use the last cell (usually the subject/title) as the notice title
+    const title = cells[cells.length - 1].slice(0, 200);
+    // Try to find a date cell (usually contains slashes like 3/20/2026)
+    const dateCell = cells.find(c => /\d{1,2}\/\d{1,2}\/\d{4}/.test(c)) || '';
+    const dateMatch = dateCell.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+    notices.push({ title, type, date: dateMatch ? dateMatch[1] : '' });
+    if (notices.length >= 8) break;
   }
+
+  // ── Strategy 2: Fallback plain text scan (for non-table EBBs) ──
+  if (notices.length === 0) {
+    const text = clean.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ');
+    const chunks = text.split(/[\n;]/);
+    for (const chunk of chunks) {
+      const t = chunk.trim(); if (t.length < 30 || t.length > 500) continue;
+      let type = null;
+      if (ofoRe.test(t) && !liftRe.test(t)) type = 'ofo';
+      else if (watRe.test(t)) type = 'watch';
+      else if (liftRe.test(t)) type = 'info';
+      if (!type) continue;
+      notices.push({ title: t.slice(0, 200), type, date: '' });
+      if (notices.length >= 8) break;
+    }
+  }
+
   return notices;
 }
 
