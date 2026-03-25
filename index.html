@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OFO Notice Dashboard</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&family=Barlow+Condensed:wght@400;600;700;900&display=swap');
+
+:root {
+  --paper:    #f2ede6;
+  --paper2:   #ede8df;
+  --ink:      #1a1612;
+  --ink2:     #3d3830;
+  --ink3:     #6b6258;
+  --rule:     #c8c0b4;
+  --rule2:    #e0d9d0;
+  --red:      #b83226;
+  --red-bg:   #fdf0ee;
+  --yellow:   #8a6200;
+  --yel-bg:   #fdf8ee;
+  --green:    #1a6b3a;
+  --grn-bg:   #eef6f1;
+  --blue:     #1a4a7a;
+  --mono:     'DM Mono', monospace;
+  --serif:    'Instrument Serif', serif;
+  --cond:     'Barlow Condensed', sans-serif;
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.page { max-width: 1140px; margin: 0 auto; padding: 0 28px 80px; }
+
+.masthead { border-bottom: 3px solid var(--ink); padding: 28px 0 16px; }
+.mh-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.mh-title { font-family: var(--serif); font-size: 50px; line-height: 0.95; letter-spacing: -1px; }
+.mh-title em { font-style: italic; color: var(--red); }
+.mh-sub { font-family: var(--mono); font-size: 10px; color: var(--ink3); letter-spacing: 2px; text-transform: uppercase; margin-top: 10px; }
+.mh-meta { text-align: right; font-family: var(--mono); font-size: 11px; color: var(--ink3); line-height: 1.9; }
+.mh-date { font-family: var(--cond); font-size: 20px; font-weight: 700; color: var(--ink); letter-spacing: 1px; display: block; }
+
+.strip { display: grid; grid-template-columns: repeat(5,1fr); border-left: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.sc { padding: 12px 14px; border-right: 1px solid var(--rule); border-top: 1px solid var(--rule); }
+.sc-val { font-family: var(--cond); font-weight: 900; font-size: 34px; line-height: 1; }
+.sc-val.ofo   { color: var(--red); }
+.sc-val.watch { color: var(--yellow); }
+.sc-val.clr   { color: var(--green); }
+.sc-lbl { font-family: var(--mono); font-size: 9px; color: var(--ink3); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 3px; }
+
+.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--rule); gap: 14px; flex-wrap: wrap; }
+.tb-left  { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.tb-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fl { font-size: 10px; color: var(--ink3); text-transform: uppercase; letter-spacing: 1.5px; }
+.fb { background: transparent; border: 1px solid var(--rule); color: var(--ink3); font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 11px; cursor: pointer; transition: all .12s; }
+.fb:hover { border-color: var(--ink2); color: var(--ink); }
+.fb.on    { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.rt { font-family: var(--mono); font-size: 10px; color: var(--ink3); white-space: nowrap; }
+.btn-ref { background: var(--ink); border: none; color: var(--paper); font-family: var(--cond); font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; padding: 8px 20px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background .15s; }
+.btn-ref:hover    { background: var(--red); }
+.btn-ref:disabled { opacity: .45; cursor: not-allowed; background: var(--ink); }
+.spin { display:inline-block; }
+.spinning { animation: rot .7s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+
+.group-hdr { padding: 10px 0 6px; font-family: var(--cond); font-weight: 700; font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--ink3); border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 10px; }
+.group-hdr::after { content: ''; flex: 1; height: 1px; background: var(--rule2); }
+
+.cards { display: flex; flex-direction: column; }
+.pc { display: grid; grid-template-columns: 220px 1fr 200px; border-bottom: 1px solid var(--rule); min-height: 112px; animation: fadeIn .25s ease both; transition: background .15s; }
+.pc:hover { background: var(--paper2); }
+.pc[data-hidden="true"] { display: none; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; } }
+
+.pi { padding: 16px 18px 16px 0; border-right: 1px solid var(--rule); display: flex; flex-direction: column; justify-content: space-between; }
+.pi-tick { font-family: var(--cond); font-weight: 900; font-size: 26px; line-height: 1; }
+.pi-full { font-family: var(--mono); font-size: 10px; color: var(--ink2); margin-top: 4px; line-height: 1.4; }
+.pi-own  { font-family: var(--mono); font-size: 10px; color: var(--ink3); }
+.pi-reg  { font-family: var(--mono); font-size: 10px; color: var(--ink3); font-style: italic; margin-top: 8px; }
+
+.pn { padding: 16px 20px; display: flex; flex-direction: column; justify-content: center; }
+.nrow { display: flex; align-items: flex-start; gap: 9px; padding: 5px 0; border-bottom: 1px dashed var(--rule2); }
+.nrow:last-child { border-bottom: none; }
+.npip { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.pip-o { background: var(--red); }
+.pip-w { background: var(--yellow); }
+.pip-i { background: var(--ink3); }
+.ntxt  { font-family: var(--mono); font-size: 11px; color: var(--ink2); line-height: 1.45; flex:1; min-width:0; }
+.ndte  { font-size: 9.5px; color: var(--ink3); white-space: nowrap; margin-top: 1px; }
+.p-empty  { font-family: var(--mono); font-size: 11px; color: var(--ink3); font-style: italic; }
+.p-direct { font-family: var(--mono); font-size: 11px; color: var(--ink3); line-height: 1.65; }
+.p-direct strong { color: var(--ink2); font-weight: 500; }
+.p-unverified { font-family: var(--mono); font-size: 11px; color: var(--yellow); line-height: 1.65; }
+.p-unverified strong { font-weight: 500; }
+
+.sk { height: 10px; border-radius: 2px; margin: 6px 0; background: linear-gradient(90deg,var(--rule2) 25%,var(--rule) 50%,var(--rule2) 75%); background-size: 200% 100%; animation: sh 1.3s ease-in-out infinite; }
+@keyframes sh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+.sk85{width:85%} .sk70{width:70%} .sk55{width:55%}
+
+.ps { padding: 16px 0 16px 20px; border-left: 1px solid var(--rule); display: flex; flex-direction: column; justify-content: space-between; }
+.pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 8px; border: 1.5px solid; font-family: var(--cond); font-weight: 700; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; width: fit-content; }
+.pill-o { color:var(--red);    border-color:var(--red);    background:var(--red-bg); }
+.pill-w { color:var(--yellow); border-color:var(--yellow); background:var(--yel-bg); }
+.pill-c { color:var(--green);  border-color:var(--green);  background:var(--grn-bg); }
+.pill-l, .pill-n { color:var(--ink3); border-color:var(--rule); background:transparent; }
+.pd { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.pd-o { background:var(--red);    animation: blink 1.1s ease-in-out infinite; }
+.pd-w { background:var(--yellow); }
+.pd-c { background:var(--green);  }
+.pd-l { background:var(--rule);   animation: blink .9s linear infinite; }
+.pd-n { background:var(--rule);   }
+.pill-u { color:var(--yellow); border-color:var(--yellow); background:var(--yel-bg); }
+.pd-u   { background:var(--yellow); animation: blink .9s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+.ebb-link { font-family: var(--mono); font-size: 10px; color: var(--blue); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; opacity: .75; transition: opacity .12s; }
+.ebb-link:hover { opacity:1; text-decoration:underline; }
+.chk { font-family:var(--mono); font-size:9px; color:var(--ink3); margin-top:4px; }
+
+.footer { padding: 22px 0 0; border-top: 1px solid var(--rule); display: flex; gap: 32px; flex-wrap: wrap; justify-content: space-between; }
+.fn { font-family:var(--mono); font-size:10px; color:var(--ink3); line-height:1.75; max-width:520px; }
+.fl2 { font-family:var(--mono); font-size:10px; color:var(--ink3); line-height:2.1; }
+.fl2 strong { color:var(--ink2); font-weight:500; display:block; margin-bottom:2px; }
+.fl2 a { color:var(--blue); text-decoration:none; }
+.fl2 a:hover { text-decoration:underline; }
+
+.ar-wrap { position: relative; }
+.ar-toggle { background: transparent; border: 1px solid var(--rule); color: var(--ink3); font-family: var(--mono); font-size: 10px; letter-spacing: 1px; padding: 5px 11px; cursor: pointer; display: flex; align-items: center; gap: 7px; transition: all .12s; white-space: nowrap; }
+.ar-toggle:hover { border-color: var(--ink2); color: var(--ink); }
+.ar-badge { font-family: var(--cond); font-weight: 700; font-size: 10px; letter-spacing: 1.5px; padding: 1px 6px; border: 1px solid; }
+.ar-off { color: var(--ink3); border-color: var(--rule); }
+.ar-on  { color: var(--green); border-color: var(--green); background: var(--grn-bg); animation: blink 2s ease-in-out infinite; }
+.ar-panel { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: var(--paper); border: 1.5px solid var(--ink); padding: 14px 16px; width: 290px; z-index: 100; box-shadow: 4px 4px 0 var(--rule); }
+.ar-panel.open { display: block; }
+.ar-panel-title { font-family: var(--cond); font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.ar-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ar-lbl { font-family: var(--mono); font-size: 10px; color: var(--ink3); white-space: nowrap; }
+.ar-input, .ar-select { font-family: var(--mono); font-size: 11px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); padding: 4px 7px; flex: 1; min-width: 0; }
+.ar-input:focus, .ar-select:focus { outline: none; border-color: var(--ink); }
+.ar-add, .ar-save { background: var(--ink); color: var(--paper); border: none; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; padding: 5px 10px; cursor: pointer; white-space: nowrap; transition: background .12s; }
+.ar-add:hover, .ar-save:hover { background: var(--red); }
+.ar-sched-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.ar-sched-item { display: flex; align-items: center; justify-content: space-between; background: var(--paper2); padding: 5px 9px; font-family: var(--mono); font-size: 11px; color: var(--ink2); }
+.ar-del { background: none; border: none; color: var(--ink3); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; transition: color .12s; }
+.ar-del:hover { color: var(--red); }
+.ar-next { margin-top: 10px; font-family: var(--mono); font-size: 10px; color: var(--ink3); border-top: 1px dashed var(--rule2); padding-top: 8px; min-height: 16px; }
+
+@media(max-width:720px){
+  .pc { grid-template-columns:1fr; }
+  .pi { border-right:none; border-bottom:1px solid var(--rule); padding:12px 0; }
+  .ps { border-left:none;  border-top:1px solid var(--rule);   padding:12px 0; }
+  .strip { grid-template-columns:repeat(3,1fr); }
+  .mh-title { font-size:36px; }
+  .page { padding:0 14px 60px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="masthead">
+    <div class="mh-top">
+      <div>
+        <div class="mh-title"><em>OFO</em> Notice<br>Dashboard</div>
+        <div class="mh-sub">Operational Flow Orders · Natural Gas Pipeline Monitor · 11 Pipelines</div>
+      </div>
+      <div class="mh-meta">
+        <span class="mh-date" id="hdr-date">—</span>
+        <span id="hdr-time">—</span>
+        <span>Central Time</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="sc"><div class="sc-val" id="s-tot">11</div><div class="sc-lbl">Pipelines</div></div>
+    <div class="sc"><div class="sc-val ofo"   id="s-ofo">—</div><div class="sc-lbl">OFO Active</div></div>
+    <div class="sc"><div class="sc-val watch" id="s-wat">—</div><div class="sc-lbl">Watch / Alert</div></div>
+    <div class="sc"><div class="sc-val clr"   id="s-clr">—</div><div class="sc-lbl">No OFO</div></div>
+    <div class="sc"><div class="sc-val" id="s-ntc" style="color:var(--ink2)">—</div><div class="sc-lbl">Total Notices</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tb-left">
+      <span class="fl">Filter:</span>
+      <button class="fb on" onclick="setFilter('all',this)">All</button>
+      <button class="fb"    onclick="setFilter('ofo-active',this)">OFO Active</button>
+      <button class="fb"    onclick="setFilter('watching',this)">Watching</button>
+      <button class="fb"    onclick="setFilter('clear',this)">Clear</button>
+    </div>
+    <div class="tb-right">
+      <span class="rt" id="rt">Press Refresh to check notices</span>
+      <div class="ar-wrap">
+        <button class="ar-toggle" id="ar-toggle" onclick="toggleArPanel()" title="Auto-refresh settings">
+          ⏱ Auto-Refresh <span id="ar-badge" class="ar-badge ar-off">OFF</span>
+        </button>
+        <div class="ar-panel" id="ar-panel">
+          <div class="ar-panel-title">Scheduled Auto-Refresh</div>
+          <div class="ar-row">
+            <label class="ar-lbl">Refresh at (CT)</label>
+            <input class="ar-input" id="ar-time1" type="time" value="07:30">
+            <button class="ar-add" onclick="addSchedule()">+ Add</button>
+          </div>
+          <div class="ar-sched-list" id="ar-sched-list"></div>
+          <div class="ar-row" style="margin-top:10px;gap:6px;">
+            <label class="ar-lbl" style="flex-shrink:0">Also every</label>
+            <select class="ar-select" id="ar-interval">
+              <option value="0">— off —</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">60 min</option>
+            </select>
+            <button class="ar-save" onclick="saveInterval()">Apply</button>
+          </div>
+          <div class="ar-next" id="ar-next"></div>
+        </div>
+      </div>
+      <button class="btn-ref" id="btn-ref" onclick="refreshAll()">
+        <span class="spin" id="si">↻</span> Refresh Notices
+      </button>
+    </div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="footer">
+    <div class="fn">
+      ⚠ <strong style="color:var(--ink2);font-weight:500;">Important:</strong>
+      The dashboard will attempt to auto-fetch notices for all 11 pipelines on refresh. If a
+      pipeline shows no notices but you expect activity, click <em>Open EBB</em> to verify directly —
+      some portals may block automated requests depending on network conditions. This dashboard is a
+      convenience tool only and does not replace official shipper notifications or email alerts.
+    </div>
+    <div class="fl2">
+      <strong>EBB Quick Links</strong>
+      <a href="https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=NGPL" target="_blank">NGPL — Kinder Morgan Critical Notices ↗</a>
+      <a href="https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=PEPL" target="_blank">Panhandle Eastern — ET Messenger ↗</a>
+      <a href="https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=MRT" target="_blank">MRT — ET Messenger ↗</a>
+      <a href="https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=CIG" target="_blank">CIG — Kinder Morgan Critical Notices ↗</a>
+      <a href="https://ebb.anrpl.com/" target="_blank">ANR — ANR EBB ↗</a>
+      <a href="https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE" target="_blank">TETCO — Enbridge LINK ↗</a>
+      <a href="https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=302&type=CRIT" target="_blank">TIGT — Tallgrass EBB ↗</a>
+      <a href="https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT" target="_blank">Trailblazer — Tallgrass EBB ↗</a>
+      <a href="https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true" target="_blank">Southern Star — Critical Notices ↗</a>
+      <a href="https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL" target="_blank">Guardian — DT Midstream / Trellis ↗</a>
+      <a href="https://ebb.tceconnects.com/infopost/" target="_blank">Northern Border — TC eConnects ↗</a>
+    </div>
+  </div>
+
+</div>
+<script>
+const GROUPS = [
+  {
+    label: 'Original Pipelines',
+    pipelines: [
+      {
+        id:'ngpl', ticker:'NGPL',
+        full:'Natural Gas Pipeline Co. of America',
+        owner:'Kinder Morgan · ArcLight · Brookfield',
+        region:'TX / Gulf Coast → Chicago Midcontinent',
+        ebb:'https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=NGPL',
+        fetch:'https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=NGPL',
+        note:null,
+      },
+      {
+        id:'pepl', ticker:'Panhandle Eastern',
+        full:'Panhandle Eastern Pipe Line Co., LP',
+        owner:'Energy Transfer',
+        region:'TX / OK Panhandle → Midwest & Great Lakes',
+        ebb:'https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=PEPL',
+        fetch:'https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=PEPL',
+        note:null,
+      },
+      {
+        id:'mrt', ticker:'MRT',
+        full:'Mississippi River Transmission, LLC',
+        owner:'Energy Transfer',
+        region:'Gulf Coast → Missouri / Illinois',
+        ebb:'https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=MRT',
+        fetch:'https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=MRT',
+        note:null,
+      },
+      {
+        id:'cig', ticker:'CIG',
+        full:'Colorado Interstate Gas Co., LLC',
+        owner:'Kinder Morgan',
+        region:'Rocky Mountains / Colorado',
+        ebb:'https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=CIG',
+        fetch:'https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=CIG',
+        note:null,
+      },
+      {
+        id:'anr', ticker:'ANR',
+        full:'ANR Pipeline Company',
+        owner:'TC Energy',
+        region:'Gulf Coast → Great Lakes / Canada',
+        ebb:'https://ebb.anrpl.com/',
+        fetch:'https://ebb.anrpl.com/Notices/Notices.asp?sPipelineCode=ANR&sSubCategory=Critical',
+        note:null,
+      },
+      {
+        id:'tetco', ticker:'TETCO',
+        full:'Texas Eastern Transmission, LP',
+        owner:'Enbridge',
+        region:'Gulf Coast → Mid-Atlantic & Northeast',
+        ebb:'https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE',
+        fetch:'https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE',
+        note:null,
+      },
+    ]
+  },
+  {
+    label: 'Added Pipelines',
+    pipelines: [
+      {
+        id:'tigt', ticker:'TIGT',
+        full:'Tallgrass Interstate Gas Transmission, LLC',
+        owner:'Tallgrass Energy',
+        region:'CO / WY / KS / NE / MO',
+        ebb:'https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=302&type=CRIT',
+        fetch:'https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=302&type=CRIT',
+        note:null,
+      },
+      {
+        id:'tbz', ticker:'Trailblazer',
+        full:'Trailblazer Pipeline Company, LLC',
+        owner:'Tallgrass Energy',
+        region:'NE Colorado → Nebraska',
+        ebb:'https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT',
+        fetch:'https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT',
+        note:null,
+      },
+      {
+        id:'sscgp', ticker:'Southern Star',
+        full:'Southern Star Central Gas Pipeline, Inc.',
+        owner:'CDPQ · Ullico',
+        region:'KS / OK / MO / WY / CO → Midwest',
+        ebb:'https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true',
+        fetch:'https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true',
+        note:null,
+      },
+      {
+        id:'gpl', ticker:'Guardian',
+        full:'Guardian Pipeline, LLC',
+        owner:'DT Midstream',
+        region:'Illinois → Wisconsin',
+        ebb:'https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL',
+        fetch:'https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL',
+        note:null,
+      },
+      {
+        id:'nbpl', ticker:'Northern Border',
+        full:'Northern Border Pipeline Company',
+        owner:'TC Energy · ONEOK (50/50)',
+        region:'Western Canada Sedimentary Basin → Midwest US',
+        ebb:'https://ebb.tceconnects.com/infopost/',
+        fetch:'https://ebb.tceconnects.com/infopost/',
+        note:null,
+      },
+    ]
+  }
+];
+
+const ALL = GROUPS.flatMap(g => g.pipelines);
+let state = {};
+let activeFilter = 'all';
+
+function nowCT() { return new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Chicago'}); }
+function dateCT() { return new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',timeZone:'America/Chicago'}); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function statusFromNotices(notices) {
+  if (!notices||!notices.length) return 'clear';
+  for (const n of notices) if (n.type==='ofo') return 'ofo-active';
+  for (const n of notices) if (n.type==='watch') return 'watching';
+  return 'clear';
+}
+
+function pillInfo(status) {
+  return { 'ofo-active':{pill:'pill-o',dot:'pd-o',lbl:'OFO ACTIVE'}, 'watching':{pill:'pill-w',dot:'pd-w',lbl:'WATCH'}, 'clear':{pill:'pill-c',dot:'pd-c',lbl:'NO OFO'}, 'loading':{pill:'pill-l',dot:'pd-l',lbl:'CHECKING…'}, 'unverified':{pill:'pill-u',dot:'pd-u',lbl:'VERIFY EBB'} }[status] || {pill:'pill-n',dot:'pd-n',lbl:'UNAVAIL'};
+}
+
+function renderCard(p, idx) {
+  const s = state[p.id];
+  const loading = !s;
+  const status = loading ? 'loading' : s.status;
+  const notices = s ? (s.notices||[]) : [];
+  const checked = s ? s.time : '';
+  const hidden = activeFilter !== 'all' && activeFilter !== status;
+  const pi = pillInfo(status);
+  const identHtml = `<div class="pi"><div><div class="pi-tick">${esc(p.ticker)}</div><div class="pi-full">${esc(p.full)}</div><div class="pi-own">${esc(p.owner)}</div></div><div class="pi-reg">${esc(p.region)}</div></div>`;
+  let noticeBody = '';
+  if (loading) {
+    noticeBody = `<div class="sk sk85"></div><div class="sk sk70" style="margin-top:8px"></div><div class="sk sk55" style="margin-top:8px"></div>`;
+  } else if (notices.length > 0) {
+    const rows = notices.slice(0,5).map(n => { const pc = n.type==='ofo'?'pip-o':n.type==='watch'?'pip-w':'pip-i'; return `<div class="nrow"><div class="npip ${pc}"></div><div style="flex:1;min-width:0"><div class="ntxt">${esc(n.title)}</div>${n.date?`<div class="ndte">${esc(n.date)}</div>`:''}</div></div>`; }).join('');
+    const more = notices.length > 5 ? `<div style="font-size:10px;color:var(--ink3);padding-top:5px">+ ${notices.length-5} more — see EBB</div>` : '';
+    noticeBody = rows + more;
+  } else if (!p.fetch) {
+    noticeBody = `<div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div>`;
+  } else if (s && s.fetchFailed) {
+    noticeBody = `<div class="p-unverified">⚠ Could not auto-fetch — click <strong>Open EBB</strong> to verify manually.</div>`;
+  } else {
+    noticeBody = `<div class="p-empty">No critical notices found on public EBB.</div>`;
+  }
+  const statusHtml = `<div class="ps"><div><div class="pill ${pi.pill}"><div class="pd ${pi.dot}"></div>${pi.lbl}</div>${checked?`<div class="chk">Checked ${checked} CT</div>`:''}</div><a class="ebb-link" href="${esc(p.ebb)}" target="_blank" rel="noopener">↗ Open EBB</a></div>`;
+  return `<div class="pc" id="card-${p.id}" data-status="${status}" data-hidden="${hidden}" style="animation-delay:${idx*45}ms">${identHtml}<div class="pn">${noticeBody}</div>${statusHtml}</div>`;
+}
+
+function renderAll() {
+  const container = document.getElementById('cards');
+  let html = ''; let gIdx = 0;
+  for (const group of GROUPS) {
+    html += `<div class="group-hdr" style="animation-delay:${gIdx*40}ms">${esc(group.label)}</div>`;
+    for (const p of group.pipelines) { html += renderCard(p, gIdx); gIdx++; }
+  }
+  container.innerHTML = html;
+}
+
+function updateCard(p) {
+  const el = document.getElementById(`card-${p.id}`); if (!el) return;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = renderCard(p, ALL.indexOf(p));
+  el.replaceWith(tmp.firstElementChild);
+}
+
+function updateSummary() {
+  let ofo=0,wat=0,clr=0,ntc=0;
+  ALL.forEach(p => { const s=state[p.id]; if(!s) return; if(s.status==='ofo-active') ofo++; else if(s.status==='watching') wat++; else clr++; ntc+=(s.notices||[]).length; });
+  document.getElementById('s-ofo').textContent=ofo; document.getElementById('s-wat').textContent=wat; document.getElementById('s-clr').textContent=clr; document.getElementById('s-ntc').textContent=ntc;
+}
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.fb').forEach(b=>b.classList.remove('on')); btn.classList.add('on');
+  document.querySelectorAll('.pc').forEach(card => { card.dataset.hidden = (f!=='all' && f!==card.dataset.status) ? 'true' : 'false'; });
+}
+
+// ── CLOUDFLARE WORKER URL ─────────────────────────────────────────────────
+// After deploying ofo_worker.js, paste your Worker URL here.
+// Example: 'https://ofo-proxy.yourname.workers.dev'
+// Leave as empty string to fall back to direct fetch (CORS may block some pipelines).
+const WORKER_URL = 'https://ofo-proxy.courtenay-schunemann.workers.dev';
+// ─────────────────────────────────────────────────────────────────────────
+
+async function fetchPipeline(p) {
+  if (!p.fetch) { state[p.id]={status:'clear',notices:[],time:nowCT(),direct:true}; return; }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 10000);
+    // Route through Cloudflare Worker if configured, otherwise try direct
+    const fetchUrl = WORKER_URL
+      ? `${WORKER_URL}?url=${encodeURIComponent(p.fetch)}`
+      : p.fetch;
+    const res = await fetch(fetchUrl, {signal:ctrl.signal}); clearTimeout(t);
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const html = await res.text();
+    const notices = parseNotices(html);
+    state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
+  } catch(e) {
+    // Fetch failed — mark as unverified so user knows to check manually
+    state[p.id] = {status:'unverified', notices:[], time:nowCT(), fetchFailed:true};
+  }
+}
+
+function parseNotices(html) {
+  const notices = [];
+  const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
+  const text = clean.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ');
+  const chunks = text.split(/[|\n;]/);
+  const ofoRe  = /\b(ofo|operational flow order|flow order|critical.*?day|imbalance.*?warn)\b/i;
+  const watRe  = /\b(watch|alert|caution|potential ofo|may.*?ofo|inventory.*?(high|low))\b/i;
+  const liftRe = /\b(lifted|terminated|cancelled|no.*?ofo|ofo.*?none|rescinded)\b/i;
+  for (const chunk of chunks) {
+    const t = chunk.trim(); if (t.length<30||t.length>400) continue;
+    let type = null;
+    if (ofoRe.test(t)&&!liftRe.test(t)) type='ofo';
+    else if (watRe.test(t)) type='watch';
+    else if (liftRe.test(t)) type='info';
+    if (!type) continue;
+    notices.push({title:t.slice(0,200),type,date:''});
+    if (notices.length>=8) break;
+  }
+  return notices;
+}
+
+function tick() { document.getElementById('hdr-date').textContent=dateCT(); document.getElementById('hdr-time').textContent=nowCT(); }
+tick(); setInterval(tick,1000);
+
+async function refreshAll() {
+  const btn=document.getElementById('btn-ref'); const si=document.getElementById('si');
+  btn.disabled=true; si.classList.add('spinning');
+  state={}; renderAll();
+  document.getElementById('rt').textContent='Checking EBBs…';
+  await Promise.allSettled(ALL.map(p=>fetchPipeline(p).then(()=>{updateCard(p);updateSummary();})));
+  document.getElementById('rt').textContent=`Last refreshed ${nowCT()} CT`;
+  btn.disabled=false; si.classList.remove('spinning');
+}
+
+let schedules=[]; let intervalMin=0; let intervalTid=null; let schedTid=null;
+
+function toggleArPanel() { document.getElementById('ar-panel').classList.toggle('open'); }
+document.addEventListener('click', e => { const w=document.querySelector('.ar-wrap'); if(w&&!w.contains(e.target)) document.getElementById('ar-panel').classList.remove('open'); });
+
+function addSchedule() {
+  const val=document.getElementById('ar-time1').value; if(!val||schedules.includes(val)) return;
+  schedules.push(val); schedules.sort(); renderScheduleList(); scheduleNextFire(); updateArBadge();
+}
+function removeSchedule(val) { schedules=schedules.filter(s=>s!==val); renderScheduleList(); scheduleNextFire(); updateArBadge(); }
+
+function renderScheduleList() {
+  const el=document.getElementById('ar-sched-list');
+  if(!schedules.length){el.innerHTML='<div style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:4px">No scheduled times yet.</div>';return;}
+  el.innerHTML=schedules.map(s=>`<div class="ar-sched-item"><span>⏰ ${formatTime12(s)} CT</span><button class="ar-del" onclick="removeSchedule('${s}')" title="Remove">✕</button></div>`).join('');
+}
+
+function formatTime12(hhmm) { const [h,m]=hhmm.split(':').map(Number); const ampm=h>=12?'PM':'AM'; const h12=h%12||12; return `${h12}:${String(m).padStart(2,'0')} ${ampm}`; }
+
+function saveInterval() {
+  const sel=document.getElementById('ar-interval'); intervalMin=parseInt(sel.value,10);
+  if(intervalTid){clearInterval(intervalTid);intervalTid=null;}
+  if(intervalMin>0) intervalTid=setInterval(refreshAll,intervalMin*60*1000);
+  updateArBadge(); scheduleNextFire();
+}
+
+function msUntilCT(hhmm) {
+  const now=new Date(); const ctStr=now.toLocaleString('en-US',{timeZone:'America/Chicago'}); const ct=new Date(ctStr);
+  const [h,m]=hhmm.split(':').map(Number); const target=new Date(ct); target.setHours(h,m,0,0);
+  if(target<=ct) target.setDate(target.getDate()+1); return target-ct;
+}
+
+function scheduleNextFire() {
+  if(schedTid){clearTimeout(schedTid);schedTid=null;} if(!schedules.length){updateNextLabel();return;}
+  const candidates=schedules.map(s=>({s,ms:msUntilCT(s)})); candidates.sort((a,b)=>a.ms-b.ms);
+  const next=candidates[0];
+  schedTid=setTimeout(()=>{refreshAll();scheduleNextFire();},next.ms);
+  updateNextLabel(next.s,next.ms);
+}
+
+function updateNextLabel(hhmm,ms) {
+  const el=document.getElementById('ar-next');
+  if(!hhmm){el.textContent=intervalMin>0?`Repeating every ${intervalMin} min.`:'';return;}
+  const mins=Math.round(ms/60000); const hrsText=mins>=60?`${Math.floor(mins/60)}h ${mins%60}m`:`${mins}m`;
+  const parts=[`Next scheduled: ${formatTime12(hhmm)} CT (in ~${hrsText})`];
+  if(intervalMin>0) parts.push(`+ every ${intervalMin} min.`);
+  el.textContent=parts.join(' · ');
+}
+
+function updateArBadge() {
+  const active=schedules.length>0||intervalMin>0; const badge=document.getElementById('ar-badge');
+  badge.textContent=active?'ON':'OFF'; badge.className='ar-badge '+(active?'ar-on':'ar-off');
+}
+
+renderScheduleList(); updateArBadge();
+renderAll(); updateSummary();
+</script>
+</body>
+</html>
