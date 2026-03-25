@@ -377,8 +377,10 @@ function dateCT() { return new Date().toLocaleDateString('en-US',{weekday:'short
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function statusFromNotices(notices) {
-  if (!notices||!notices.length) return 'clear';
-  for (const n of notices) if (n.type==='ofo') return 'ofo-active';
+  // Chronology is handled in parseNotices — most recent notice already determines outcome.
+  // If parseNotices returned only an 'info' notice, it means the most recent was resolved → clear.
+  if (!notices || !notices.length) return 'clear';
+  for (const n of notices) if (n.type==='ofo')   return 'ofo-active';
   for (const n of notices) if (n.type==='watch') return 'watching';
   return 'clear';
 }
@@ -474,61 +476,94 @@ function parseNotices(html) {
   const notices = [];
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
-  // ── Strategy 1: Look for table rows (Kinder Morgan format) ──
-  // Each <tr> in their notice table contains cells with notice type, subtype, date, and subject
-  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-  const ofoRe  = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
-  const watRe  = /\b(watch|alert|caution|potential ofo|may.*?ofo|inventory.*?(high|low)|high wind|freeze|cold weather)\b/i;
-  const liftRe = /\b(lifted|terminated|cancelled|no.*?ofo|ofo.*?none|rescinded|resolved)\b/i;
+  // ── Keywords ──
+  const ofoRe    = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
+  const watchRe  = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
 
+  // Resolved keywords — if the MOST RECENT relevant notice subject contains any of these, status = clear
+  const resolvedRe = /\b(report|removed|lifted|terminated|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled)\b/i;
+
+  // ── Parse table rows (works for Kinder Morgan, Energy Transfer, Tallgrass, Enbridge) ──
+  const rowRe  = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
+
   while ((rowMatch = rowRe.exec(clean)) !== null) {
     const rowHtml = rowMatch[1];
-    // Extract all cell text from this row
-    const cells = [];
+    const cellRe  = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cells   = [];
     let cellMatch;
-    const cellRe2 = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    while ((cellMatch = cellRe2.exec(rowHtml)) !== null) {
-      const cellText = cellMatch[1].replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
-      if (cellText) cells.push(cellText);
+    while ((cellMatch = cellRe.exec(rowHtml)) !== null) {
+      const txt = cellMatch[1].replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+      if (txt) cells.push(txt);
     }
     if (cells.length < 2) continue;
-    // Join all cells in the row to check for OFO keywords
+
     const rowText = cells.join(' | ');
-    if (rowText.length < 10) continue;
-    let type = null;
-    if (ofoRe.test(rowText) && !liftRe.test(rowText)) type = 'ofo';
-    else if (watRe.test(rowText)) type = 'watch';
-    else if (liftRe.test(rowText)) type = 'info';
-    if (!type) continue;
-    // Use the last cell (usually the subject/title) as the notice title
-    const title = cells[cells.length - 1].slice(0, 200);
-    // Try to find a date cell (usually contains slashes like 3/20/2026)
-    const dateCell = cells.find(c => /\d{1,2}\/\d{1,2}\/\d{4}/.test(c)) || '';
-    const dateMatch = dateCell.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-    notices.push({ title, type, date: dateMatch ? dateMatch[1] : '' });
-    if (notices.length >= 8) break;
+    const subject = cells[cells.length - 1]; // Subject is always the last meaningful cell
+
+    // Only process rows that are OFO or alert related
+    const isOfoRow   = ofoRe.test(rowText);
+    const isWatchRow = watchRe.test(rowText);
+    if (!isOfoRow && !isWatchRow) continue;
+
+    // ── Chronology logic: check if this notice is resolved ──
+    const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText);
+
+    // Extract date from the row (look for MM/DD/YYYY or YYYY-MM-DD patterns)
+    const dateMatch = rowText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
+    const date = dateMatch ? dateMatch[1] : '';
+
+    let type;
+    if (isResolved) {
+      type = 'info'; // resolved / lifted
+    } else if (isOfoRow) {
+      type = 'ofo';
+    } else {
+      type = 'watch';
+    }
+
+    notices.push({ title: subject.slice(0, 200), type, date });
+    if (notices.length >= 10) break;
   }
 
-  // ── Strategy 2: Fallback plain text scan (for non-table EBBs) ──
+  // ── Chronology: determine final status from most recent relevant notice ──
+  // Notices are already in table order (newest first for most pipelines)
+  // Find the most recent OFO or watch notice and check if it's resolved
+  if (notices.length > 0) {
+    const mostRecent = notices[0];
+    // If the most recent relevant notice is resolved, mark all as info
+    // so statusFromNotices returns clear
+    if (mostRecent.type === 'info') {
+      // All notices are effectively resolved — return only the resolved notice
+      return [{ title: mostRecent.title, type: 'info', date: mostRecent.date }];
+    }
+  }
+
+  // ── Fallback: plain text scan for non-table EBBs ──
   if (notices.length === 0) {
     const text = clean.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ');
     const chunks = text.split(/[\n;]/);
     for (const chunk of chunks) {
-      const t = chunk.trim(); if (t.length < 30 || t.length > 500) continue;
+      const t = chunk.trim();
+      if (t.length < 20 || t.length > 500) continue;
+      const isResolved = resolvedRe.test(t);
       let type = null;
-      if (ofoRe.test(t) && !liftRe.test(t)) type = 'ofo';
-      else if (watRe.test(t)) type = 'watch';
-      else if (liftRe.test(t)) type = 'info';
+      if (ofoRe.test(t) && !isResolved)   type = 'ofo';
+      else if (watchRe.test(t) && !isResolved) type = 'watch';
+      else if (isResolved && (ofoRe.test(t) || watchRe.test(t))) type = 'info';
       if (!type) continue;
       notices.push({ title: t.slice(0, 200), type, date: '' });
       if (notices.length >= 8) break;
+    }
+    // Apply same chronology logic to fallback results
+    if (notices.length > 0 && notices[0].type === 'info') {
+      return [{ title: notices[0].title, type: 'info', date: notices[0].date }];
     }
   }
 
   return notices;
 }
+
 
 function tick() { document.getElementById('hdr-date').textContent=dateCT(); document.getElementById('hdr-time').textContent=nowCT(); }
 tick(); setInterval(tick,1000);
