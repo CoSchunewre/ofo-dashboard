@@ -513,7 +513,7 @@ function parseNotices(html, p) {
       if (txt) cells.push(txt);
     }
     // Get the URL from the subject cell (last cell with an href)
-    let rawUrl = cellUrls.filter(Boolean).pop() || null;
+    let rawUrl = cellUrls.find(u => u && !u.startsWith('javascript') && (u.includes('notice') || u.includes('Notice'))) || null;
     let noticeUrl = null;
     if (rawUrl) {
       // Skip javascript: links entirely
@@ -534,7 +534,7 @@ function parseNotices(html, p) {
     // Their subject links use javascript:doPostBack() not real hrefs.
     // The Notice ID is a numeric cell — use it to construct the detail URL directly.
     if (!noticeUrl && p && p.id && (p.id === 'ngpl' || p.id === 'cig')) {
-      const noticeIdCell = cells.find(c => /^\d{4,6}$/.test(c.trim()));
+      const noticeIdCell = cells.find(c => /^\s*\d{4,6}\s*$/.test(c));
       if (noticeIdCell) {
         const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
         noticeUrl = `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${noticeIdCell.trim()}`;
