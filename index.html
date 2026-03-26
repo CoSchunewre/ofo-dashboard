@@ -534,7 +534,7 @@ function parseNotices(html, p) {
     // Their subject links use javascript:doPostBack() not real hrefs.
     // The Notice ID is a numeric cell — use it to construct the detail URL directly.
     if (!noticeUrl && p && p.id && (p.id === 'ngpl' || p.id === 'cig')) {
-      const noticeIdCell = cells.find(c => /^\s*\d{4,6}\s*$/.test(c));
+      const noticeIdCell = cells.find(c => /^\s*\d{3,7}\s*$/.test(c));
       if (noticeIdCell) {
         const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
         noticeUrl = `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${noticeIdCell.trim()}`;
@@ -543,7 +543,7 @@ function parseNotices(html, p) {
     if (cells.length < 2) continue;
 
     const rowText = cells.join(' | ');
-    const subject = cells[cells.length - 1]; // Subject is always the last meaningful cell
+    const subject = [...cells].reverse().find(c => c.length > 5 && !/^\d+$/.test(c) && !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(c)) || cells[cells.length - 1];
 
     // Only process rows that are OFO or alert related
     const isOfoRow   = ofoRe.test(rowText);
@@ -566,7 +566,13 @@ function parseNotices(html, p) {
       type = 'watch';
     }
 
-    notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
+    // ── ANR / TC eConnects: build URL from Notice Identifier cell ──
+    if (!noticeUrl && p && p.id === 'anr') {
+      const anrIdCell = cells.find(c => /^\s*\d{6,8}\s*$/.test(c));
+      if (anrIdCell) {
+        noticeUrl = `https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=${anrIdCell.trim()}`;
+      }
+    }notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
     if (notices.length >= 10) break;
   }
 
