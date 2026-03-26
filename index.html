@@ -171,7 +171,7 @@ body {
     <div class="mh-top">
       <div>
         <div class="mh-title"><em>OFO</em> Notice<br>Dashboard</div>
-        <div class="mh-sub">Operational Flow Orders · Natural Gas Pipeline Monitor · 11 Pipelines</div>
+        <div class="mh-sub">Operational Flow Orders · Natural Gas Pipeline Monitor · 12 Pipelines</div>
       </div>
       <div class="mh-meta">
         <span class="mh-date" id="hdr-date">—</span>
@@ -182,7 +182,7 @@ body {
   </div>
 
   <div class="strip">
-    <div class="sc"><div class="sc-val" id="s-tot">11</div><div class="sc-lbl">Pipelines</div></div>
+    <div class="sc"><div class="sc-val" id="s-tot">12</div><div class="sc-lbl">Pipelines</div></div>
     <div class="sc"><div class="sc-val ofo"   id="s-ofo">—</div><div class="sc-lbl">OFO Active</div></div>
     <div class="sc"><div class="sc-val watch" id="s-wat">—</div><div class="sc-lbl">Watch / Alert</div></div>
     <div class="sc"><div class="sc-val clr"   id="s-clr">—</div><div class="sc-lbl">No OFO</div></div>
@@ -256,6 +256,7 @@ body {
       <a href="https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true" target="_blank">Southern Star — Critical Notices ↗</a>
       <a href="https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL" target="_blank">Guardian — DT Midstream / Trellis ↗</a>
       <a href="https://ebb.tceconnects.com/infopost/" target="_blank">Northern Border — TC eConnects ↗</a>
+      <a href="https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx" target="_blank">NNG — Northern Natural Gas ↗</a>
     </div>
   </div>
 
@@ -367,6 +368,15 @@ const GROUPS = [
         region:'Western Canada Sedimentary Basin → Midwest US',
         ebb:'https://ebb.tceconnects.com/infopost/',
         fetch:'https://ebb.tceconnects.com/infopost/',
+        note:null,
+      },
+      {
+        id:'nng', ticker:'NNG',
+        full:'Northern Natural Gas Company',
+        owner:'Southern Company Gas',
+        region:'Permian Basin / Midcontinent → Midwest / Great Lakes',
+        ebb:'https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx',
+        fetch:'https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx',
         note:null,
       },
     ]
@@ -489,7 +499,7 @@ function parseNotices(html, p) {
 
   // ── Keywords ──
   const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
-  const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
+  const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|sol|sul|critical day|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
   const resolvedRe = /\b(report|removed|lifted|terminated|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled)\b/i;
 
   // ── Determine base URL for relative link resolution ──
@@ -569,6 +579,15 @@ function parseNotices(html, p) {
       const idCell = cells.find(c => /^\s*\d{6,8}\s*$/.test(c));
       if (idCell) {
         noticeUrl = `https://ebb.anrpl.com/Notices/NoticeDetail.aspx?sPipelineCode=ANR&sNoticeID=${idCell.trim()}`;
+      }
+    }
+
+    // Priority 4: NNG — build from Notice ID cell
+    // Detail URL: https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=XXXXXX
+    if (!noticeUrl && p && p.id === 'nng') {
+      const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
+      if (idCell) {
+        noticeUrl = `https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=${idCell.trim()}`;
       }
     }
 
