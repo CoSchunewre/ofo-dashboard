@@ -538,9 +538,9 @@ function parseNotices(html, p) {
     }
 
     if (cells.length < 2) continue;
-    if (rowText.length < 20) continue;
 
     const rowText = cells.join(' | ');
+    if (rowText.length < 20) continue;
 
     // ── Subject: last cell with meaningful text (not just a number, date, or Download link) ──
     const subject = [...cells].reverse().find(c =>
