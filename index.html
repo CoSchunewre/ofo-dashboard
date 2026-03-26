@@ -94,6 +94,8 @@ body {
 .pip-w { background: var(--yellow); }
 .pip-i { background: var(--ink3); }
 .ntxt  { font-family: var(--mono); font-size: 11px; color: var(--ink2); line-height: 1.45; flex:1; min-width:0; }
+.ntxt-link { font-family: var(--mono); font-size: 11px; color: var(--blue); line-height: 1.45; flex:1; min-width:0; text-decoration: none; display:block; }
+.ntxt-link:hover { text-decoration: underline; }
 .ndte  { font-size: 9.5px; color: var(--ink3); white-space: nowrap; margin-top: 1px; }
 .p-empty  { font-family: var(--mono); font-size: 11px; color: var(--ink3); font-style: italic; }
 .p-direct { font-family: var(--mono); font-size: 11px; color: var(--ink3); line-height: 1.65; }
@@ -232,6 +234,9 @@ body {
 
   <div class="footer">
     <div class="fn">
+      <div style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:1px;color:var(--ink2);margin-bottom:6px;">
+        Maintained by Courtenay Schunemann &nbsp;·&nbsp; <span style="font-weight:400;color:var(--ink3)">Last updated March 25, 2026</span>
+      </div>
       ⚠ <strong style="color:var(--ink2);font-weight:500;">Important:</strong>
       The dashboard will attempt to auto-fetch notices for all 11 pipelines on refresh. If a
       pipeline shows no notices but you expect activity, click <em>Open EBB</em> to verify directly —
@@ -402,7 +407,13 @@ function renderCard(p, idx) {
   if (loading) {
     noticeBody = `<div class="sk sk85"></div><div class="sk sk70" style="margin-top:8px"></div><div class="sk sk55" style="margin-top:8px"></div>`;
   } else if (notices.length > 0) {
-    const rows = notices.slice(0,5).map(n => { const pc = n.type==='ofo'?'pip-o':n.type==='watch'?'pip-w':'pip-i'; return `<div class="nrow"><div class="npip ${pc}"></div><div style="flex:1;min-width:0"><div class="ntxt">${esc(n.title)}</div>${n.date?`<div class="ndte">${esc(n.date)}</div>`:''}</div></div>`; }).join('');
+    const rows = notices.slice(0,5).map(n => {
+      const pc = n.type==='ofo'?'pip-o':n.type==='watch'?'pip-w':'pip-i';
+      const titleHtml = n.url
+        ? `<a class="ntxt-link" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)} ↗</a>`
+        : `<div class="ntxt">${esc(n.title)}</div>`;
+      return `<div class="nrow"><div class="npip ${pc}"></div><div style="flex:1;min-width:0">${titleHtml}${n.date?`<div class="ndte">${esc(n.date)}</div>`:''}</div></div>`;
+    }).join('');
     const more = notices.length > 5 ? `<div style="font-size:10px;color:var(--ink3);padding-top:5px">+ ${notices.length-5} more — see EBB</div>` : '';
     noticeBody = rows + more;
   } else if (!p.fetch) {
@@ -450,6 +461,7 @@ function setFilter(f, btn) {
 // Example: 'https://ofo-proxy.yourname.workers.dev'
 // Leave as empty string to fall back to direct fetch (CORS may block some pipelines).
 const WORKER_URL = 'https://ofo-proxy.courtenay-schunemann.workers.dev';
+
 // ─────────────────────────────────────────────────────────────────────────
 
 async function fetchPipeline(p) {
@@ -491,11 +503,18 @@ function parseNotices(html) {
     const rowHtml = rowMatch[1];
     const cellRe  = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     const cells   = [];
+    const cellUrls = [];
     let cellMatch;
     while ((cellMatch = cellRe.exec(rowHtml)) !== null) {
-      const txt = cellMatch[1].replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+      const cellHtml = cellMatch[1];
+      // Extract href from any anchor in this cell
+      const hrefMatch = cellHtml.match(/href=["']([^"']+)["']/i);
+      cellUrls.push(hrefMatch ? hrefMatch[1] : null);
+      const txt = cellHtml.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
       if (txt) cells.push(txt);
     }
+    // Get the URL from the subject cell (last cell with an href)
+    const noticeUrl = cellUrls.filter(Boolean).pop() || null;
     if (cells.length < 2) continue;
 
     const rowText = cells.join(' | ');
@@ -522,7 +541,7 @@ function parseNotices(html) {
       type = 'watch';
     }
 
-    notices.push({ title: subject.slice(0, 200), type, date });
+    notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
     if (notices.length >= 10) break;
   }
 
@@ -634,6 +653,8 @@ function updateArBadge() {
 
 renderScheduleList(); updateArBadge();
 renderAll(); updateSummary();
+// Auto-refresh on page load — fires for every visitor when they open the dashboard
+window.addEventListener('load', () => { setTimeout(refreshAll, 800); });
 </script>
 </body>
 </html>
