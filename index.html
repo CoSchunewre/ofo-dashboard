@@ -461,7 +461,6 @@ function setFilter(f, btn) {
 // Example: 'https://ofo-proxy.yourname.workers.dev'
 // Leave as empty string to fall back to direct fetch (CORS may block some pipelines).
 const WORKER_URL = 'https://ofo-proxy.courtenay-schunemann.workers.dev';
-
 // ─────────────────────────────────────────────────────────────────────────
 
 async function fetchPipeline(p) {
@@ -476,7 +475,7 @@ async function fetchPipeline(p) {
     const res = await fetch(fetchUrl, {signal:ctrl.signal}); clearTimeout(t);
     if (!res.ok) throw new Error('HTTP '+res.status);
     const html = await res.text();
-    const notices = parseNotices(html);
+    const notices = parseNotices(html, p);
     state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
   } catch(e) {
     // Fetch failed — mark as unverified so user knows to check manually
@@ -484,7 +483,7 @@ async function fetchPipeline(p) {
   }
 }
 
-function parseNotices(html) {
+function parseNotices(html, p) {
   const notices = [];
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
@@ -514,7 +513,33 @@ function parseNotices(html) {
       if (txt) cells.push(txt);
     }
     // Get the URL from the subject cell (last cell with an href)
-    const noticeUrl = cellUrls.filter(Boolean).pop() || null;
+    let rawUrl = cellUrls.filter(Boolean).pop() || null;
+    let noticeUrl = null;
+    if (rawUrl) {
+      // Skip javascript: links entirely
+      if (rawUrl.startsWith('javascript:')) {
+        noticeUrl = null;
+      } else if (rawUrl.startsWith('http')) {
+        noticeUrl = rawUrl;
+      } else if (rawUrl.startsWith('/') && p && p.ebb) {
+        // Relative URL — make it absolute using the pipeline's base domain
+        try {
+          const base = new URL(p.ebb);
+          noticeUrl = base.origin + rawUrl;
+        } catch(e) { noticeUrl = null; }
+      }
+    }
+
+    // ── Kinder Morgan: build URL from Notice ID cell ──
+    // Their subject links use javascript:doPostBack() not real hrefs.
+    // The Notice ID is a numeric cell — use it to construct the detail URL directly.
+    if (!noticeUrl && p && p.id && (p.id === 'ngpl' || p.id === 'cig')) {
+      const noticeIdCell = cells.find(c => /^\d{4,6}$/.test(c.trim()));
+      if (noticeIdCell) {
+        const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
+        noticeUrl = `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${noticeIdCell.trim()}`;
+      }
+    }
     if (cells.length < 2) continue;
 
     const rowText = cells.join(' | ');
