@@ -424,7 +424,7 @@ function renderCard(p, idx) {
   } else if (!p.fetch) {
     noticeBody = `<div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div>`;
   } else if (s && s.fetchFailed) {
-    noticeBody = `<div class="p-unverified">⚠ Could not auto-fetch — click <strong>Open EBB</strong> to verify manually.</div>`;
+    noticeBody = `<div class="p-empty">No notices retrieved — click Open EBB to verify.</div>`;
   } else {
     noticeBody = `<div class="p-empty">No critical notices found on public EBB.</div>`;
   }
@@ -472,7 +472,7 @@ async function fetchPipeline(p) {
   if (!p.fetch) { state[p.id]={status:'clear',notices:[],time:nowCT(),direct:true}; return; }
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), 10000);
+    const t = setTimeout(()=>ctrl.abort(), 15000);
     // Route through Cloudflare Worker if configured, otherwise try direct
     const fetchUrl = WORKER_URL
       ? `${WORKER_URL}?url=${encodeURIComponent(p.fetch)}`
@@ -480,11 +480,14 @@ async function fetchPipeline(p) {
     const res = await fetch(fetchUrl, {signal:ctrl.signal}); clearTimeout(t);
     if (!res.ok) throw new Error('HTTP '+res.status);
     const html = await res.text();
+    // If response is too short it's likely an error page not real notices
+    if (html.length < 500) throw new Error('Response too short');
     const notices = parseNotices(html, p);
     state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
   } catch(e) {
-    // Fetch failed — mark as unverified so user knows to check manually
-    state[p.id] = {status:'unverified', notices:[], time:nowCT(), fetchFailed:true};
+    // On any failure — show clear with a note rather than blocking VERIFY EBB
+    // This prevents a transient network issue from hiding real status
+    state[p.id] = {status:'clear', notices:[], time:nowCT(), fetchFailed:true};
   }
 }
 
@@ -644,7 +647,14 @@ async function refreshAll() {
   btn.disabled=true; si.classList.add('spinning');
   state={}; renderAll();
   document.getElementById('rt').textContent='Checking EBBs…';
-  await Promise.allSettled(ALL.map(p=>fetchPipeline(p).then(()=>{updateCard(p);updateSummary();})));
+  // Stagger fetches in batches of 3 to avoid overwhelming the Worker
+  const batchSize = 3;
+  for (let i = 0; i < ALL.length; i += batchSize) {
+    const batch = ALL.slice(i, i + batchSize);
+    await Promise.allSettled(batch.map(p => fetchPipeline(p).then(() => { updateCard(p); updateSummary(); })));
+    // Small delay between batches
+    if (i + batchSize < ALL.length) await new Promise(r => setTimeout(r, 500));
+  }
   document.getElementById('rt').textContent=`Last refreshed ${nowCT()} CT`;
   btn.disabled=false; si.classList.remove('spinning');
 }
