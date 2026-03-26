@@ -488,105 +488,103 @@ function parseNotices(html, p) {
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
   // ── Keywords ──
-  const ofoRe    = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
-  const watchRe  = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
-
-  // Resolved keywords — if the MOST RECENT relevant notice subject contains any of these, status = clear
+  const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
+  const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
   const resolvedRe = /\b(report|removed|lifted|terminated|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled)\b/i;
 
-  // ── Parse table rows (works for Kinder Morgan, Energy Transfer, Tallgrass, Enbridge) ──
-  const rowRe  = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  // ── Determine base URL for relative link resolution ──
+  let baseOrigin = '';
+  if (p && p.ebb) {
+    try { baseOrigin = new URL(p.ebb).origin; } catch(e) {}
+  }
+
+  // ── Helper: resolve a raw href to absolute URL ──
+  function resolveUrl(raw) {
+    if (!raw) return null;
+    if (raw.startsWith('javascript:') || raw.startsWith('#')) return null;
+    if (raw.startsWith('http')) return raw;
+    if (raw.startsWith('/') && baseOrigin) return baseOrigin + raw;
+    return null;
+  }
+
+  // ── Parse table rows ──
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
 
   while ((rowMatch = rowRe.exec(clean)) !== null) {
     const rowHtml = rowMatch[1];
-    const cellRe  = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    const cells   = [];
+    const cellRe2 = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cells    = [];
     const cellUrls = [];
-    let cellMatch;
-    while ((cellMatch = cellRe.exec(rowHtml)) !== null) {
-      const cellHtml = cellMatch[1];
-      // Extract href from any anchor in this cell
-      const hrefMatch = cellHtml.match(/href=["']([^"']+)["']/i);
-      cellUrls.push(hrefMatch ? hrefMatch[1] : null);
+    let cm;
+
+    while ((cm = cellRe2.exec(rowHtml)) !== null) {
+      const cellHtml = cm[1];
+      // Grab ALL hrefs in this cell, resolve them
+      const hrefRe = /href=["']([^"']+)["']/gi;
+      let hm, resolvedHref = null;
+      while ((hm = hrefRe.exec(cellHtml)) !== null) {
+        const resolved = resolveUrl(hm[1]);
+        if (resolved) { resolvedHref = resolved; break; }
+      }
+      cellUrls.push(resolvedHref);
       const txt = cellHtml.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
       if (txt) cells.push(txt);
     }
-    // Get the URL from the subject cell (last cell with an href)
-    let rawUrl = cellUrls.find(u => u && !u.startsWith('javascript') && (u.includes('notice') || u.includes('Notice'))) || null;
-    let noticeUrl = null;
-    if (rawUrl) {
-      // Skip javascript: links entirely
-      if (rawUrl.startsWith('javascript:')) {
-        noticeUrl = null;
-      } else if (rawUrl.startsWith('http')) {
-        noticeUrl = rawUrl;
-      } else if (rawUrl.startsWith('/') && p && p.ebb) {
-        // Relative URL — make it absolute using the pipeline's base domain
-        try {
-          const base = new URL(p.ebb);
-          noticeUrl = base.origin + rawUrl;
-        } catch(e) { noticeUrl = null; }
-      }
-    }
 
-    // ── Kinder Morgan: build URL from Notice ID cell ──
-    // Their subject links use javascript:doPostBack() not real hrefs.
-    // The Notice ID is a numeric cell — use it to construct the detail URL directly.
-    if (!noticeUrl && p && p.id && (p.id === 'ngpl' || p.id === 'cig')) {
-      const noticeIdCell = cells.find(c => /^\s*\d{3,7}\s*$/.test(c));
-      if (noticeIdCell) {
-        const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
-        noticeUrl = `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${noticeIdCell.trim()}`;
-      }
-    }
     if (cells.length < 2) continue;
 
     const rowText = cells.join(' | ');
-    const subject = [...cells].reverse().find(c => c.length > 5 && !/^\d+$/.test(c) && !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(c)) || cells[cells.length - 1];
 
-    // Only process rows that are OFO or alert related
+    // ── Subject: last cell with meaningful text (not just a number or date) ──
+    const subject = [...cells].reverse().find(c =>
+      c.length > 5 &&
+      !/^\s*\d{1,7}\s*$/.test(c) &&
+      !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
+      !/^\d{4}-\d{2}-\d{2}/.test(c)
+    ) || cells[cells.length - 1];
+
+    // ── Only process OFO/alert rows ──
     const isOfoRow   = ofoRe.test(rowText);
     const isWatchRow = watchRe.test(rowText);
     if (!isOfoRow && !isWatchRow) continue;
 
-    // ── Chronology logic: check if this notice is resolved ──
     const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText);
 
-    // Extract date from the row (look for MM/DD/YYYY or YYYY-MM-DD patterns)
+    // ── Build notice URL ──
+    // Priority 1: real href found in any cell
+    let noticeUrl = cellUrls.find(u => u) || null;
+
+    // Priority 2: Kinder Morgan — build from numeric Notice ID cell
+    if (!noticeUrl && p && (p.id === 'ngpl' || p.id === 'cig')) {
+      const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
+      if (idCell) {
+        const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
+        noticeUrl = `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${idCell.trim()}`;
+      }
+    }
+
+    // Priority 3: ANR — build from numeric Notice Identifier cell
+    if (!noticeUrl && p && p.id === 'anr') {
+      const idCell = cells.find(c => /^\s*\d{6,8}\s*$/.test(c));
+      if (idCell) {
+        noticeUrl = `https://ebb.anrpl.com/Notices/NoticeDetail.aspx?sPipelineCode=ANR&sNoticeID=${idCell.trim()}`;
+      }
+    }
+
+    // Extract date
     const dateMatch = rowText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
     const date = dateMatch ? dateMatch[1] : '';
 
-    let type;
-    if (isResolved) {
-      type = 'info'; // resolved / lifted
-    } else if (isOfoRow) {
-      type = 'ofo';
-    } else {
-      type = 'watch';
-    }
+    const type = isResolved ? 'info' : isOfoRow ? 'ofo' : 'watch';
 
-    // ── ANR / TC eConnects: build URL from Notice Identifier cell ──
-    if (!noticeUrl && p && p.id === 'anr') {
-      const anrIdCell = cells.find(c => /^\s*\d{6,8}\s*$/.test(c));
-      if (anrIdCell) {
-        noticeUrl = `https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=${anrIdCell.trim()}`;
-      }
-    }notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
+    notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
     if (notices.length >= 10) break;
   }
 
-  // ── Chronology: determine final status from most recent relevant notice ──
-  // Notices are already in table order (newest first for most pipelines)
-  // Find the most recent OFO or watch notice and check if it's resolved
-  if (notices.length > 0) {
-    const mostRecent = notices[0];
-    // If the most recent relevant notice is resolved, mark all as info
-    // so statusFromNotices returns clear
-    if (mostRecent.type === 'info') {
-      // All notices are effectively resolved — return only the resolved notice
-      return [{ title: mostRecent.title, type: 'info', date: mostRecent.date }];
-    }
+  // ── Chronology: most recent notice determines status ──
+  if (notices.length > 0 && notices[0].type === 'info') {
+    return [{ title: notices[0].title, type: 'info', date: notices[0].date, url: notices[0].url }];
   }
 
   // ── Fallback: plain text scan for non-table EBBs ──
@@ -602,12 +600,11 @@ function parseNotices(html, p) {
       else if (watchRe.test(t) && !isResolved) type = 'watch';
       else if (isResolved && (ofoRe.test(t) || watchRe.test(t))) type = 'info';
       if (!type) continue;
-      notices.push({ title: t.slice(0, 200), type, date: '' });
+      notices.push({ title: t.slice(0, 200), type, date: '', url: null });
       if (notices.length >= 8) break;
     }
-    // Apply same chronology logic to fallback results
     if (notices.length > 0 && notices[0].type === 'info') {
-      return [{ title: notices[0].title, type: 'info', date: notices[0].date }];
+      return [{ title: notices[0].title, type: 'info', date: notices[0].date, url: null }];
     }
   }
 
