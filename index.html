@@ -264,7 +264,7 @@ body {
 <script>
 const GROUPS = [
   {
-    label: 'Original Pipelines',
+    label: 'Pipelines',
     pipelines: [
       {
         id:'ngpl', ticker:'NGPL',
@@ -273,6 +273,15 @@ const GROUPS = [
         region:'TX / Gulf Coast → Chicago Midcontinent',
         ebb:'https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=NGPL',
         fetch:'https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=NGPL',
+        note:null,
+      },
+      {
+        id:'nng', ticker:'NNG',
+        full:'Northern Natural Gas Company',
+        owner:'Southern Company Gas',
+        region:'Permian Basin / Midcontinent → Midwest / Great Lakes',
+        ebb:'https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx',
+        fetch:'https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx',
         note:null,
       },
       {
@@ -320,11 +329,6 @@ const GROUPS = [
         fetch:'https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE',
         note:null,
       },
-    ]
-  },
-  {
-    label: 'Added Pipelines',
-    pipelines: [
       {
         id:'tigt', ticker:'TIGT',
         full:'Tallgrass Interstate Gas Transmission, LLC',
@@ -368,15 +372,6 @@ const GROUPS = [
         region:'Western Canada Sedimentary Basin → Midwest US',
         ebb:'https://ebb.tceconnects.com/infopost/',
         fetch:'https://ebb.tceconnects.com/infopost/',
-        note:null,
-      },
-      {
-        id:'nng', ticker:'NNG',
-        full:'Northern Natural Gas Company',
-        owner:'Southern Company Gas',
-        region:'Permian Basin / Midcontinent → Midwest / Great Lakes',
-        ebb:'https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx',
-        fetch:'https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx',
         note:null,
       },
     ]
@@ -441,7 +436,7 @@ function renderAll() {
   const container = document.getElementById('cards');
   let html = ''; let gIdx = 0;
   for (const group of GROUPS) {
-    html += `<div class="group-hdr" style="animation-delay:${gIdx*40}ms">${esc(group.label)}</div>`;
+    if (GROUPS.length > 1) html += `<div class="group-hdr" style="animation-delay:${gIdx*40}ms">${esc(group.label)}</div>`;
     for (const p of group.pipelines) { html += renderCard(p, gIdx); gIdx++; }
   }
   container.innerHTML = html;
@@ -498,9 +493,9 @@ function parseNotices(html, p) {
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
   // ── Keywords ──
-  const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
-  const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|sol|sul|critical day|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
-  const resolvedRe = /\b(report|removed|lifted|terminated|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled)\b/i;
+  const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn|sol|sul|operational alert)\b/i;
+  const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
+  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled)\b/i;
 
   // ── Determine base URL for relative link resolution ──
   let baseOrigin = '';
@@ -546,12 +541,15 @@ function parseNotices(html, p) {
 
     const rowText = cells.join(' | ');
 
-    // ── Subject: last cell with meaningful text (not just a number or date) ──
+    // ── Subject: last cell with meaningful text (not just a number, date, or Download link) ──
     const subject = [...cells].reverse().find(c =>
       c.length > 5 &&
       !/^\s*\d{1,7}\s*$/.test(c) &&
       !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
-      !/^\d{4}-\d{2}-\d{2}/.test(c)
+      !/^\d{4}-\d{2}-\d{2}/.test(c) &&
+      !/^download\s+\d/i.test(c) &&
+      !/^terminate$/i.test(c) &&
+      !/^initiate$/i.test(c)
     ) || cells[cells.length - 1];
 
     // ── Only process OFO/alert rows ──
@@ -559,7 +557,9 @@ function parseNotices(html, p) {
     const isWatchRow = watchRe.test(rowText);
     if (!isOfoRow && !isWatchRow) continue;
 
-    const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText);
+    // For NNG and similar: check if Notice Status cell says "Terminate"
+    const hasTerminateStatus = cells.some(c => /^terminate$/i.test(c.trim()));
+    const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText) || hasTerminateStatus;
 
     // ── Build notice URL ──
     // Priority 1: real href found in any cell
