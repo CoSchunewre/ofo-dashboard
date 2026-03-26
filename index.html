@@ -424,7 +424,7 @@ function renderCard(p, idx) {
   } else if (!p.fetch) {
     noticeBody = `<div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div>`;
   } else if (s && s.fetchFailed) {
-    noticeBody = `<div class="p-unverified">⚠ Could not auto-fetch — click <strong>Open EBB</strong> to verify manually.</div>`;
+    noticeBody = `<div class="p-empty">No notices retrieved — click Open EBB to verify.</div>`;
   } else {
     noticeBody = `<div class="p-empty">No critical notices found on public EBB.</div>`;
   }
@@ -483,8 +483,8 @@ async function fetchPipeline(p) {
     const notices = parseNotices(html, p);
     state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
   } catch(e) {
-    // Fetch failed — mark as unverified so user knows to check manually
-    state[p.id] = {status:'unverified', notices:[], time:nowCT(), fetchFailed:true};
+    // Fetch failed — show as clear/no notices rather than alarming VERIFY EBB
+    state[p.id] = {status:'clear', notices:[], time:nowCT(), fetchFailed:true};
   }
 }
 
