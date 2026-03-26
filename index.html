@@ -171,7 +171,7 @@ body {
     <div class="mh-top">
       <div>
         <div class="mh-title"><em>OFO</em> Notice<br>Dashboard</div>
-        <div class="mh-sub">Operational Flow Orders · Natural Gas Pipeline Monitor · 12 Pipelines</div>
+        <div class="mh-sub">Operational Flow Orders · Natural Gas Pipeline Monitor · 9 Pipelines</div>
       </div>
       <div class="mh-meta">
         <span class="mh-date" id="hdr-date">—</span>
@@ -182,7 +182,7 @@ body {
   </div>
 
   <div class="strip">
-    <div class="sc"><div class="sc-val" id="s-tot">12</div><div class="sc-lbl">Pipelines</div></div>
+    <div class="sc"><div class="sc-val" id="s-tot">9</div><div class="sc-lbl">Pipelines</div></div>
     <div class="sc"><div class="sc-val ofo"   id="s-ofo">—</div><div class="sc-lbl">OFO Active</div></div>
     <div class="sc"><div class="sc-val watch" id="s-wat">—</div><div class="sc-lbl">Watch / Alert</div></div>
     <div class="sc"><div class="sc-val clr"   id="s-clr">—</div><div class="sc-lbl">No OFO</div></div>
@@ -250,7 +250,6 @@ body {
       <a href="https://peplmessenger.energytransfer.com/ipost/notice/critical?asset=MRT" target="_blank">MRT — ET Messenger ↗</a>
       <a href="https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=CIG" target="_blank">CIG — Kinder Morgan Critical Notices ↗</a>
       <a href="https://ebb.anrpl.com/" target="_blank">ANR — ANR EBB ↗</a>
-      <a href="https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE" target="_blank">TETCO — Enbridge LINK ↗</a>
       <a href="https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=302&type=CRIT" target="_blank">TIGT — Tallgrass EBB ↗</a>
       <a href="https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT" target="_blank">Trailblazer — Tallgrass EBB ↗</a>
       <a href="https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true" target="_blank">Southern Star — Critical Notices ↗</a>
@@ -321,15 +320,6 @@ const GROUPS = [
         note:null,
       },
       {
-        id:'tetco', ticker:'TETCO',
-        full:'Texas Eastern Transmission, LP',
-        owner:'Enbridge',
-        region:'Gulf Coast → Mid-Atlantic & Northeast',
-        ebb:'https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE',
-        fetch:'https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE',
-        note:null,
-      },
-      {
         id:'tigt', ticker:'TIGT',
         full:'Tallgrass Interstate Gas Transmission, LLC',
         owner:'Tallgrass Energy',
@@ -339,30 +329,12 @@ const GROUPS = [
         note:null,
       },
       {
-        id:'tbz', ticker:'Trailblazer',
-        full:'Trailblazer Pipeline Company, LLC',
-        owner:'Tallgrass Energy',
-        region:'NE Colorado → Nebraska',
-        ebb:'https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT',
-        fetch:'https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT',
-        note:null,
-      },
-      {
         id:'sscgp', ticker:'Southern Star',
         full:'Southern Star Central Gas Pipeline, Inc.',
         owner:'CDPQ · Ullico',
         region:'KS / OK / MO / WY / CO → Midwest',
         ebb:'https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true',
         fetch:'https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true',
-        note:null,
-      },
-      {
-        id:'gpl', ticker:'Guardian',
-        full:'Guardian Pipeline, LLC',
-        owner:'DT Midstream',
-        region:'Illinois → Wisconsin',
-        ebb:'https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL',
-        fetch:'https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL',
         note:null,
       },
       {
@@ -424,7 +396,7 @@ function renderCard(p, idx) {
   } else if (!p.fetch) {
     noticeBody = `<div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div>`;
   } else if (s && s.fetchFailed) {
-    noticeBody = `<div class="p-empty">No notices retrieved — click Open EBB to verify.</div>`;
+    noticeBody = `<div class="p-unverified">⚠ Could not auto-fetch — click <strong>Open EBB</strong> to verify manually.</div>`;
   } else {
     noticeBody = `<div class="p-empty">No critical notices found on public EBB.</div>`;
   }
@@ -483,8 +455,8 @@ async function fetchPipeline(p) {
     const notices = parseNotices(html, p);
     state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
   } catch(e) {
-    // Fetch failed — show as clear/no notices rather than alarming VERIFY EBB
-    state[p.id] = {status:'clear', notices:[], time:nowCT(), fetchFailed:true};
+    // Fetch failed — mark as unverified so user knows to check manually
+    state[p.id] = {status:'unverified', notices:[], time:nowCT(), fetchFailed:true};
   }
 }
 
@@ -492,18 +464,13 @@ function parseNotices(html, p) {
   const notices = [];
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
-  // ── Keywords ──
   const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
   const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
-  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled|carlton resolution)\b/i;
+  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|carlton resolution)\b/i;
 
-  // ── Determine base URL for relative link resolution ──
   let baseOrigin = '';
-  if (p && p.ebb) {
-    try { baseOrigin = new URL(p.ebb).origin; } catch(e) {}
-  }
+  if (p && p.ebb) { try { baseOrigin = new URL(p.ebb).origin; } catch(e) {} }
 
-  // ── Helper: resolve a raw href to absolute URL ──
   function resolveUrl(raw) {
     if (!raw) return null;
     if (raw.startsWith('javascript:') || raw.startsWith('#')) return null;
@@ -512,20 +479,88 @@ function parseNotices(html, p) {
     return null;
   }
 
-  // ── Parse table rows ──
+  // ── Kinder Morgan: extract data-ig values directly ──
+  // KM encodes notice data in data-ig attributes: x:XXXXXX.96:val:NOTICE_ID
+  if (p && (p.id === 'ngpl' || p.id === 'cig')) {
+    const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
+    // Find all rows by looking for the notice ID pattern in data-ig
+    const rowRe2 = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rm;
+    while ((rm = rowRe2.exec(clean)) !== null) {
+      const rowHtml = rm[1];
+      // Extract all cell text values
+      const cellRe2 = /<td[^>]*data-ig="[^"]*\.96:val:([^"]*)"[^>]*>([\s\S]*?)<\/td>/gi;
+      const dataVals = [];
+      let cm2;
+      while ((cm2 = cellRe2.exec(rowHtml)) !== null) {
+        dataVals.push(cm2[1]); // the val: value
+      }
+      // Also get plain cell text
+      const plainCells = [];
+      const plainRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      let pm;
+      while ((pm = plainRe.exec(rowHtml)) !== null) {
+        const txt = pm[1].replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+        if (txt) plainCells.push(txt);
+      }
+      if (plainCells.length < 3) continue;
+
+      // Skip Carlton Resolution
+      const rowText = plainCells.join(' | ');
+      if (/carlton/i.test(rowText)) continue;
+
+      const isOfoRow = ofoRe.test(rowText);
+      const isWatchRow = watchRe.test(rowText);
+      if (!isOfoRow && !isWatchRow) continue;
+
+      // Find the subject — last meaningful cell, not a number/date/download
+      const subject = [...plainCells].reverse().find(c =>
+        c.length > 5 &&
+        !/^\s*\d{1,7}\s*$/.test(c) &&
+        !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
+        !/^\d{4}-\d{2}-\d{2}/.test(c) &&
+        !/^download\s+\d/i.test(c) &&
+        !/^(terminate|initiate|supersede|unchecked|partial)$/i.test(c)
+      ) || plainCells[plainCells.length - 1];
+
+      const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText);
+      const hasActiveStatus = plainCells.some(c => /^initiate$/i.test(c.trim()));
+      const hasResolvedStatus = plainCells.some(c => /^(terminate|supersede|cancelled|expired)$/i.test(c.trim()));
+      const finalResolved = (isResolved || hasResolvedStatus) && !hasActiveStatus;
+
+      // Find Notice ID — numeric cell 4-7 digits
+      const idCell = plainCells.find(c => /^\s*\d{4,7}\s*$/.test(c));
+      const noticeUrl = idCell
+        ? `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${idCell.trim()}`
+        : null;
+
+      const dateMatch = rowText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
+      const date = dateMatch ? dateMatch[1] : '';
+      const type = finalResolved ? 'info' : isOfoRow ? 'ofo' : 'watch';
+
+      notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
+      if (notices.length >= 10) break;
+    }
+
+    if (notices.length > 0 && notices[0].type === 'info') {
+      return [{ title: notices[0].title, type: 'info', date: notices[0].date, url: notices[0].url }];
+    }
+    return notices;
+  }
+
+  // ── General table parser (ET, Tallgrass, Southern Star, ANR, NNG, Northern Border) ──
   const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
 
   while ((rowMatch = rowRe.exec(clean)) !== null) {
     const rowHtml = rowMatch[1];
-    const cellRe2 = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cellRe  = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     const cells    = [];
     const cellUrls = [];
     let cm;
 
-    while ((cm = cellRe2.exec(rowHtml)) !== null) {
+    while ((cm = cellRe.exec(rowHtml)) !== null) {
       const cellHtml = cm[1];
-      // Grab ALL hrefs in this cell, resolve them
       const hrefRe = /href=["']([^"']+)["']/gi;
       let hm, resolvedHref = null;
       while ((hm = hrefRe.exec(cellHtml)) !== null) {
@@ -538,127 +573,78 @@ function parseNotices(html, p) {
     }
 
     if (cells.length < 2) continue;
-    if (rowText.length < 20) continue;
 
     const rowText = cells.join(' | ');
+    if (rowText.length < 20) continue;
+    if (/carlton/i.test(rowText)) continue;
 
-    // ── Subject: last cell with meaningful text (not just a number, date, or Download link) ──
+    const nngRe = /\b(operational alert|sol|sul|operational alert\/sol|operational alert\/sul|operational alert\/critical day)\b/i;
+    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText);
+    const isOfoRow   = ofoRe.test(rowText) || isNngOfo;
+    const isWatchRow = watchRe.test(rowText);
+    if (!isOfoRow && !isWatchRow) continue;
+
     const subject = [...cells].reverse().find(c =>
       c.length > 5 &&
       !/^\s*\d{1,7}\s*$/.test(c) &&
       !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
       !/^\d{4}-\d{2}-\d{2}/.test(c) &&
       !/^download\s+\d/i.test(c) &&
-      !/^terminate$/i.test(c) &&
-      !/^initiate$/i.test(c)
+      !/^(terminate|initiate|supersede|unchecked|partial)$/i.test(c)
     ) || cells[cells.length - 1];
 
-    // ── Skip Carlton Resolution rows entirely for all pipelines ──
-    if (/carlton/i.test(rowText)) continue;
-
-    // ── Only process OFO/alert rows ──
-    const nngRe = /\b(operational alert|operational alert\/sol|operational alert\/sul|operational alert\/critical day|sol|sul)\b/i;
-    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText);
-    const isOfoRow   = ofoRe.test(rowText) || isNngOfo;
-    const isWatchRow = watchRe.test(rowText);
-    if (!isOfoRow && !isWatchRow) continue;
-
-    // Check Notice Status cell: Terminate/Supersede = resolved, Initiate = active
     const hasResolvedStatus = cells.some(c => /^(terminate|supersede|cancelled|expired)$/i.test(c.trim()));
     const hasActiveStatus   = cells.some(c => /^initiate$/i.test(c.trim()));
-    // If explicitly Initiate, don't treat as resolved even if resolvedRe matches something else
     const isResolved = (resolvedRe.test(subject) || resolvedRe.test(rowText) || hasResolvedStatus) && !hasActiveStatus;
 
-    // ── Build notice URL ──
-    // Priority 1: real href found in any cell
     let noticeUrl = cellUrls.find(u => u) || null;
 
-    // Priority 2: Kinder Morgan — build from numeric Notice ID cell
-    if (!noticeUrl && p && (p.id === 'ngpl' || p.id === 'cig')) {
-      const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
-      if (idCell) {
-        const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
-        noticeUrl = `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${idCell.trim()}`;
-      }
-    }
-
-    // Priority 3: ANR — build from numeric Notice Identifier cell
     if (!noticeUrl && p && p.id === 'anr') {
       const idCell = cells.find(c => /^\s*\d{6,8}\s*$/.test(c));
-      if (idCell) {
-        noticeUrl = `https://ebb.anrpl.com/Notices/NoticeDetail.aspx?sPipelineCode=ANR&sNoticeID=${idCell.trim()}`;
-      }
+      if (idCell) noticeUrl = `https://ebb.anrpl.com/Notices/NoticeDetail.aspx?sPipelineCode=ANR&sNoticeID=${idCell.trim()}`;
     }
-
-    // Priority 4: NNG — build from Notice ID cell
     if (!noticeUrl && p && p.id === 'nng') {
       const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
-      if (idCell) {
-        noticeUrl = `https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=${idCell.trim()}`;
-      }
+      if (idCell) noticeUrl = `https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=${idCell.trim()}`;
     }
-
-    // Priority 5: TETCO (Enbridge) — build from Notice Identifier cell
-    // Confirmed URL format: NoticeListDetail.asp?strKey1=XXXXXX&type=CRI&Embed=2&pipe=TE
-    if (!noticeUrl && p && p.id === 'tetco') {
-      const idCell = cells.find(c => /^\s*\d{4,8}\s*$/.test(c));
-      if (idCell) {
-        noticeUrl = `https://infopost.enbridge.com/InfoPost/NoticeListDetail.asp?strKey1=${idCell.trim()}&type=CRI&Embed=2&pipe=TE`;
-      }
-    }
-
-    // Priority 6: Southern Star — build from Notice ID cell
     if (!noticeUrl && p && p.id === 'sscgp') {
       const idCell = cells.find(c => /^\s*\d{4,8}\s*$/.test(c));
-      if (idCell) {
-        noticeUrl = `https://csi.southernstar.com/infoPosting/NoticeDetail?noticeId=${idCell.trim()}`;
-      }
+      if (idCell) noticeUrl = `https://csi.southernstar.com/infoPosting/NoticeDetail?noticeId=${idCell.trim()}`;
     }
-
-    // Priority 7: Northern Border (TC eConnects) — build from Notice ID cell
     if (!noticeUrl && p && p.id === 'nbpl') {
       const idCell = cells.find(c => /^\s*\d{6,9}\s*$/.test(c));
-      if (idCell) {
-        noticeUrl = `https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=${idCell.trim()}`;
-      }
+      if (idCell) noticeUrl = `https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=${idCell.trim()}`;
     }
-
-    // Priority 8: PEPL / MRT — if relative URL not resolved, build from Notice ID
     if (!noticeUrl && p && (p.id === 'pepl' || p.id === 'mrt')) {
       const asset = p.id === 'pepl' ? 'PEPL' : 'MRT';
       const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
-      if (idCell) {
-        noticeUrl = `https://peplmessenger.energytransfer.com/ipost/notice/detail/${idCell.trim()}?asset=${asset}`;
-      }
+      if (idCell) noticeUrl = `https://peplmessenger.energytransfer.com/ipost/notice/detail/${idCell.trim()}?asset=${asset}`;
     }
 
-    // Extract date
     const dateMatch = rowText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
     const date = dateMatch ? dateMatch[1] : '';
-
     const type = isResolved ? 'info' : isOfoRow ? 'ofo' : 'watch';
 
     notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
     if (notices.length >= 10) break;
   }
 
-  // ── Chronology: most recent notice determines status ──
   if (notices.length > 0 && notices[0].type === 'info') {
     return [{ title: notices[0].title, type: 'info', date: notices[0].date, url: notices[0].url }];
   }
 
-  // ── Fallback: plain text scan for non-table EBBs ──
+  // Fallback plain text scan
   if (notices.length === 0) {
     const text = clean.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ');
-    const chunks = text.split(/[\n;]/);
-    for (const chunk of chunks) {
+    for (const chunk of text.split(/[\n;]/)) {
       const t = chunk.trim();
       if (t.length < 20 || t.length > 500) continue;
-      const isResolved = resolvedRe.test(t);
+      if (/carlton/i.test(t)) continue;
+      const res = resolvedRe.test(t);
       let type = null;
-      if (ofoRe.test(t) && !isResolved)   type = 'ofo';
-      else if (watchRe.test(t) && !isResolved) type = 'watch';
-      else if (isResolved && (ofoRe.test(t) || watchRe.test(t))) type = 'info';
+      if (ofoRe.test(t) && !res) type = 'ofo';
+      else if (watchRe.test(t) && !res) type = 'watch';
+      else if (res && (ofoRe.test(t) || watchRe.test(t))) type = 'info';
       if (!type) continue;
       notices.push({ title: t.slice(0, 200), type, date: '', url: null });
       if (notices.length >= 8) break;
@@ -672,77 +658,3 @@ function parseNotices(html, p) {
 }
 
 
-function tick() { document.getElementById('hdr-date').textContent=dateCT(); document.getElementById('hdr-time').textContent=nowCT(); }
-tick(); setInterval(tick,1000);
-
-async function refreshAll() {
-  const btn=document.getElementById('btn-ref'); const si=document.getElementById('si');
-  btn.disabled=true; si.classList.add('spinning');
-  state={}; renderAll();
-  document.getElementById('rt').textContent='Checking EBBs…';
-  await Promise.allSettled(ALL.map(p=>fetchPipeline(p).then(()=>{updateCard(p);updateSummary();})));
-  document.getElementById('rt').textContent=`Last refreshed ${nowCT()} CT`;
-  btn.disabled=false; si.classList.remove('spinning');
-}
-
-let schedules=[]; let intervalMin=0; let intervalTid=null; let schedTid=null;
-
-function toggleArPanel() { document.getElementById('ar-panel').classList.toggle('open'); }
-document.addEventListener('click', e => { const w=document.querySelector('.ar-wrap'); if(w&&!w.contains(e.target)) document.getElementById('ar-panel').classList.remove('open'); });
-
-function addSchedule() {
-  const val=document.getElementById('ar-time1').value; if(!val||schedules.includes(val)) return;
-  schedules.push(val); schedules.sort(); renderScheduleList(); scheduleNextFire(); updateArBadge();
-}
-function removeSchedule(val) { schedules=schedules.filter(s=>s!==val); renderScheduleList(); scheduleNextFire(); updateArBadge(); }
-
-function renderScheduleList() {
-  const el=document.getElementById('ar-sched-list');
-  if(!schedules.length){el.innerHTML='<div style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:4px">No scheduled times yet.</div>';return;}
-  el.innerHTML=schedules.map(s=>`<div class="ar-sched-item"><span>⏰ ${formatTime12(s)} CT</span><button class="ar-del" onclick="removeSchedule('${s}')" title="Remove">✕</button></div>`).join('');
-}
-
-function formatTime12(hhmm) { const [h,m]=hhmm.split(':').map(Number); const ampm=h>=12?'PM':'AM'; const h12=h%12||12; return `${h12}:${String(m).padStart(2,'0')} ${ampm}`; }
-
-function saveInterval() {
-  const sel=document.getElementById('ar-interval'); intervalMin=parseInt(sel.value,10);
-  if(intervalTid){clearInterval(intervalTid);intervalTid=null;}
-  if(intervalMin>0) intervalTid=setInterval(refreshAll,intervalMin*60*1000);
-  updateArBadge(); scheduleNextFire();
-}
-
-function msUntilCT(hhmm) {
-  const now=new Date(); const ctStr=now.toLocaleString('en-US',{timeZone:'America/Chicago'}); const ct=new Date(ctStr);
-  const [h,m]=hhmm.split(':').map(Number); const target=new Date(ct); target.setHours(h,m,0,0);
-  if(target<=ct) target.setDate(target.getDate()+1); return target-ct;
-}
-
-function scheduleNextFire() {
-  if(schedTid){clearTimeout(schedTid);schedTid=null;} if(!schedules.length){updateNextLabel();return;}
-  const candidates=schedules.map(s=>({s,ms:msUntilCT(s)})); candidates.sort((a,b)=>a.ms-b.ms);
-  const next=candidates[0];
-  schedTid=setTimeout(()=>{refreshAll();scheduleNextFire();},next.ms);
-  updateNextLabel(next.s,next.ms);
-}
-
-function updateNextLabel(hhmm,ms) {
-  const el=document.getElementById('ar-next');
-  if(!hhmm){el.textContent=intervalMin>0?`Repeating every ${intervalMin} min.`:'';return;}
-  const mins=Math.round(ms/60000); const hrsText=mins>=60?`${Math.floor(mins/60)}h ${mins%60}m`:`${mins}m`;
-  const parts=[`Next scheduled: ${formatTime12(hhmm)} CT (in ~${hrsText})`];
-  if(intervalMin>0) parts.push(`+ every ${intervalMin} min.`);
-  el.textContent=parts.join(' · ');
-}
-
-function updateArBadge() {
-  const active=schedules.length>0||intervalMin>0; const badge=document.getElementById('ar-badge');
-  badge.textContent=active?'ON':'OFF'; badge.className='ar-badge '+(active?'ar-on':'ar-off');
-}
-
-renderScheduleList(); updateArBadge();
-renderAll(); updateSummary();
-// Auto-refresh on page load — fires for every visitor when they open the dashboard
-window.addEventListener('load', () => { setTimeout(refreshAll, 800); });
-</script>
-</body>
-</html>
