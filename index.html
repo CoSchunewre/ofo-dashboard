@@ -424,7 +424,7 @@ function renderCard(p, idx) {
   } else if (!p.fetch) {
     noticeBody = `<div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div>`;
   } else if (s && s.fetchFailed) {
-    noticeBody = `<div class="p-empty">No notices retrieved — click Open EBB to verify.</div>`;
+    noticeBody = `<div class="p-unverified">⚠ Could not auto-fetch — click <strong>Open EBB</strong> to verify manually.</div>`;
   } else {
     noticeBody = `<div class="p-empty">No critical notices found on public EBB.</div>`;
   }
@@ -472,7 +472,7 @@ async function fetchPipeline(p) {
   if (!p.fetch) { state[p.id]={status:'clear',notices:[],time:nowCT(),direct:true}; return; }
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), 15000);
+    const t = setTimeout(()=>ctrl.abort(), 10000);
     // Route through Cloudflare Worker if configured, otherwise try direct
     const fetchUrl = WORKER_URL
       ? `${WORKER_URL}?url=${encodeURIComponent(p.fetch)}`
@@ -480,14 +480,11 @@ async function fetchPipeline(p) {
     const res = await fetch(fetchUrl, {signal:ctrl.signal}); clearTimeout(t);
     if (!res.ok) throw new Error('HTTP '+res.status);
     const html = await res.text();
-    // If response is too short it's likely an error page not real notices
-    if (html.length < 500) throw new Error('Response too short');
     const notices = parseNotices(html, p);
     state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
   } catch(e) {
-    // On any failure — show clear with a note rather than blocking VERIFY EBB
-    // This prevents a transient network issue from hiding real status
-    state[p.id] = {status:'clear', notices:[], time:nowCT(), fetchFailed:true};
+    // Fetch failed — mark as unverified so user knows to check manually
+    state[p.id] = {status:'unverified', notices:[], time:nowCT(), fetchFailed:true};
   }
 }
 
@@ -541,9 +538,9 @@ function parseNotices(html, p) {
     }
 
     if (cells.length < 2) continue;
+    if (rowText.length < 20) continue;
 
     const rowText = cells.join(' | ');
-    if (rowText.length < 20) continue;
 
     // ── Subject: last cell with meaningful text (not just a number, date, or Download link) ──
     const subject = [...cells].reverse().find(c =>
@@ -558,8 +555,9 @@ function parseNotices(html, p) {
 
     // ── Only process OFO/alert rows ──
     const nngRe = /\b(operational alert|operational alert\/sol|operational alert\/sul|operational alert\/critical day|sol|sul)\b/i;
-    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText);
-    const isOfoRow   = ofoRe.test(rowText) || isNngOfo;
+    const isCarlton = /carlton/i.test(rowText);
+    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText) && !isCarlton;
+    const isOfoRow   = (ofoRe.test(rowText) && !isCarlton) || isNngOfo;
     const isWatchRow = watchRe.test(rowText);
     if (!isOfoRow && !isWatchRow) continue;
 
@@ -591,11 +589,44 @@ function parseNotices(html, p) {
     }
 
     // Priority 4: NNG — build from Notice ID cell
-    // Detail URL: https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=XXXXXX
     if (!noticeUrl && p && p.id === 'nng') {
       const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
       if (idCell) {
         noticeUrl = `https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=${idCell.trim()}`;
+      }
+    }
+
+    // Priority 5: TETCO (Enbridge) — build from Notice Identifier cell
+    // Confirmed URL format: NoticeListDetail.asp?strKey1=XXXXXX&type=CRI&Embed=2&pipe=TE
+    if (!noticeUrl && p && p.id === 'tetco') {
+      const idCell = cells.find(c => /^\s*\d{4,8}\s*$/.test(c));
+      if (idCell) {
+        noticeUrl = `https://infopost.enbridge.com/InfoPost/NoticeListDetail.asp?strKey1=${idCell.trim()}&type=CRI&Embed=2&pipe=TE`;
+      }
+    }
+
+    // Priority 6: Southern Star — build from Notice ID cell
+    if (!noticeUrl && p && p.id === 'sscgp') {
+      const idCell = cells.find(c => /^\s*\d{4,8}\s*$/.test(c));
+      if (idCell) {
+        noticeUrl = `https://csi.southernstar.com/infoPosting/NoticeDetail?noticeId=${idCell.trim()}`;
+      }
+    }
+
+    // Priority 7: Northern Border (TC eConnects) — build from Notice ID cell
+    if (!noticeUrl && p && p.id === 'nbpl') {
+      const idCell = cells.find(c => /^\s*\d{6,9}\s*$/.test(c));
+      if (idCell) {
+        noticeUrl = `https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=${idCell.trim()}`;
+      }
+    }
+
+    // Priority 8: PEPL / MRT — if relative URL not resolved, build from Notice ID
+    if (!noticeUrl && p && (p.id === 'pepl' || p.id === 'mrt')) {
+      const asset = p.id === 'pepl' ? 'PEPL' : 'MRT';
+      const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
+      if (idCell) {
+        noticeUrl = `https://peplmessenger.energytransfer.com/ipost/notice/detail/${idCell.trim()}?asset=${asset}`;
       }
     }
 
@@ -647,14 +678,7 @@ async function refreshAll() {
   btn.disabled=true; si.classList.add('spinning');
   state={}; renderAll();
   document.getElementById('rt').textContent='Checking EBBs…';
-  // Stagger fetches in batches of 3 to avoid overwhelming the Worker
-  const batchSize = 3;
-  for (let i = 0; i < ALL.length; i += batchSize) {
-    const batch = ALL.slice(i, i + batchSize);
-    await Promise.allSettled(batch.map(p => fetchPipeline(p).then(() => { updateCard(p); updateSummary(); })));
-    // Small delay between batches
-    if (i + batchSize < ALL.length) await new Promise(r => setTimeout(r, 500));
-  }
+  await Promise.allSettled(ALL.map(p=>fetchPipeline(p).then(()=>{updateCard(p);updateSummary();})));
   document.getElementById('rt').textContent=`Last refreshed ${nowCT()} CT`;
   btn.disabled=false; si.classList.remove('spinning');
 }
