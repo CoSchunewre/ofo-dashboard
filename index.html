@@ -238,7 +238,7 @@ body {
         Maintained by Courtenay Schunemann &nbsp;·&nbsp; <span style="font-weight:400;color:var(--ink3)">Last updated March 25, 2026</span>
       </div>
       ⚠ <strong style="color:var(--ink2);font-weight:500;">Important:</strong>
-      The dashboard will attempt to auto-fetch notices for all 11 pipelines on refresh. If a
+      The dashboard will attempt to auto-fetch notices for all 9 pipelines on refresh. If a
       pipeline shows no notices but you expect activity, click <em>Open EBB</em> to verify directly —
       some portals may block automated requests depending on network conditions. This dashboard is a
       convenience tool only and does not replace official shipper notifications or email alerts.
@@ -251,9 +251,7 @@ body {
       <a href="https://pipeline2.kindermorgan.com/Notices/Notices.aspx?type=C&code=CIG" target="_blank">CIG — Kinder Morgan Critical Notices ↗</a>
       <a href="https://ebb.anrpl.com/" target="_blank">ANR — ANR EBB ↗</a>
       <a href="https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=302&type=CRIT" target="_blank">TIGT — Tallgrass EBB ↗</a>
-      <a href="https://pipeline.tallgrassenergylp.com/Pages/Notices.aspx?pipeline=403&type=CRIT" target="_blank">Trailblazer — Tallgrass EBB ↗</a>
       <a href="https://csi.southernstar.com/infoPosting/DisplayNotices?isCritical=true" target="_blank">Southern Star — Critical Notices ↗</a>
-      <a href="https://dtmidstream.trellisenergy.com/ptms/home/infopost/GPL" target="_blank">Guardian — DT Midstream / Trellis ↗</a>
       <a href="https://ebb.tceconnects.com/infopost/" target="_blank">Northern Border — TC eConnects ↗</a>
       <a href="https://www.northernnaturalgas.com/infopostings/Notices/Pages/Critical.aspx" target="_blank">NNG — Northern Natural Gas ↗</a>
     </div>
@@ -464,9 +462,9 @@ function parseNotices(html, p) {
   const notices = [];
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
-  const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
-  const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
-  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|carlton resolution)\b/i;
+  const ofoRe = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
+  const watchRe = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo)\b/i;
+  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|carlton resolution)\b/i;
 
   let baseOrigin = '';
   if (p && p.ebb) { try { baseOrigin = new URL(p.ebb).origin; } catch(e) {} }
@@ -479,146 +477,78 @@ function parseNotices(html, p) {
     return null;
   }
 
-  // ── Kinder Morgan: extract data-ig values directly ──
-  // KM encodes notice data in data-ig attributes: x:XXXXXX.96:val:NOTICE_ID
-  if (p && (p.id === 'ngpl' || p.id === 'cig')) {
-    const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
-    // Find all rows by looking for the notice ID pattern in data-ig
-    const rowRe2 = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let rm;
-    while ((rm = rowRe2.exec(clean)) !== null) {
-      const rowHtml = rm[1];
-      // Extract all cell text values
-      const cellRe2 = /<td[^>]*data-ig="[^"]*\.96:val:([^"]*)"[^>]*>([\s\S]*?)<\/td>/gi;
-      const dataVals = [];
-      let cm2;
-      while ((cm2 = cellRe2.exec(rowHtml)) !== null) {
-        dataVals.push(cm2[1]); // the val: value
-      }
-      // Also get plain cell text
-      const plainCells = [];
-      const plainRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-      let pm;
-      while ((pm = plainRe.exec(rowHtml)) !== null) {
-        const txt = pm[1].replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
-        if (txt) plainCells.push(txt);
-      }
-      if (plainCells.length < 3) continue;
-
-      // Skip Carlton Resolution
-      const rowText = plainCells.join(' | ');
-      if (/carlton/i.test(rowText)) continue;
-
-      const isOfoRow = ofoRe.test(rowText);
-      const isWatchRow = watchRe.test(rowText);
-      if (!isOfoRow && !isWatchRow) continue;
-
-      // Find the subject — last meaningful cell, not a number/date/download
-      const subject = [...plainCells].reverse().find(c =>
-        c.length > 5 &&
-        !/^\s*\d{1,7}\s*$/.test(c) &&
-        !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
-        !/^\d{4}-\d{2}-\d{2}/.test(c) &&
-        !/^download\s+\d/i.test(c) &&
-        !/^(terminate|initiate|supersede|unchecked|partial)$/i.test(c)
-      ) || plainCells[plainCells.length - 1];
-
-      const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText);
-      const hasActiveStatus = plainCells.some(c => /^initiate$/i.test(c.trim()));
-      const hasResolvedStatus = plainCells.some(c => /^(terminate|supersede|cancelled|expired)$/i.test(c.trim()));
-      const finalResolved = (isResolved || hasResolvedStatus) && !hasActiveStatus;
-
-      // Find Notice ID — numeric cell 4-7 digits
-      const idCell = plainCells.find(c => /^\s*\d{4,7}\s*$/.test(c));
-      const noticeUrl = idCell
-        ? `https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=${code}&notc_nbr=${idCell.trim()}`
-        : null;
-
-      const dateMatch = rowText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
-      const date = dateMatch ? dateMatch[1] : '';
-      const type = finalResolved ? 'info' : isOfoRow ? 'ofo' : 'watch';
-
-      notices.push({ title: subject.slice(0, 200), type, date, url: noticeUrl });
-      if (notices.length >= 10) break;
-    }
-
-    if (notices.length > 0 && notices[0].type === 'info') {
-      return [{ title: notices[0].title, type: 'info', date: notices[0].date, url: notices[0].url }];
-    }
-    return notices;
+  function isGoodSubject(c) {
+    return c.length > 5 &&
+      !/^\s*\d{1,7}\s*$/.test(c) &&
+      !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
+      !/^\d{4}-\d{2}-\d{2}/.test(c) &&
+      !/^download\s+\d/i.test(c) &&
+      !/^(terminate|initiate|supersede|unchecked|partial|select all|filter not applied)$/i.test(c);
   }
 
-  // ── General table parser (ET, Tallgrass, Southern Star, ANR, NNG, Northern Border) ──
   const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
 
   while ((rowMatch = rowRe.exec(clean)) !== null) {
     const rowHtml = rowMatch[1];
-    const cellRe  = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    const cells    = [];
+    const cells = [];
     const cellUrls = [];
+    const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     let cm;
 
     while ((cm = cellRe.exec(rowHtml)) !== null) {
       const cellHtml = cm[1];
-      const hrefRe = /href=["']([^"']+)["']/gi;
-      let hm, resolvedHref = null;
-      while ((hm = hrefRe.exec(cellHtml)) !== null) {
-        const resolved = resolveUrl(hm[1]);
-        if (resolved) { resolvedHref = resolved; break; }
-      }
+      const hrefMatch = cellHtml.match(/href=["']([^"']+)["']/i);
+      const resolvedHref = hrefMatch ? resolveUrl(hrefMatch[1]) : null;
       cellUrls.push(resolvedHref);
       const txt = cellHtml.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
       if (txt) cells.push(txt);
     }
 
     if (cells.length < 2) continue;
-
     const rowText = cells.join(' | ');
     if (rowText.length < 20) continue;
     if (/carlton/i.test(rowText)) continue;
 
-    const nngRe = /\b(operational alert|sol|sul|operational alert\/sol|operational alert\/sul|operational alert\/critical day)\b/i;
+    const nngRe = /\b(operational alert|sol|sul)\b/i;
     const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText);
-    const isOfoRow   = ofoRe.test(rowText) || isNngOfo;
+    const isOfoRow = ofoRe.test(rowText) || isNngOfo;
     const isWatchRow = watchRe.test(rowText);
     if (!isOfoRow && !isWatchRow) continue;
 
-    const subject = [...cells].reverse().find(c =>
-      c.length > 5 &&
-      !/^\s*\d{1,7}\s*$/.test(c) &&
-      !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c) &&
-      !/^\d{4}-\d{2}-\d{2}/.test(c) &&
-      !/^download\s+\d/i.test(c) &&
-      !/^(terminate|initiate|supersede|unchecked|partial)$/i.test(c)
-    ) || cells[cells.length - 1];
+    const subject = [...cells].reverse().find(isGoodSubject) || cells[cells.length - 1];
 
     const hasResolvedStatus = cells.some(c => /^(terminate|supersede|cancelled|expired)$/i.test(c.trim()));
-    const hasActiveStatus   = cells.some(c => /^initiate$/i.test(c.trim()));
+    const hasActiveStatus = cells.some(c => /^initiate$/i.test(c.trim()));
     const isResolved = (resolvedRe.test(subject) || resolvedRe.test(rowText) || hasResolvedStatus) && !hasActiveStatus;
 
     let noticeUrl = cellUrls.find(u => u) || null;
 
+    if (!noticeUrl && p && (p.id === 'ngpl' || p.id === 'cig')) {
+      const code = p.id === 'ngpl' ? 'NGPL' : 'CIG';
+      const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
+      if (idCell) noticeUrl = 'https://pipeline2.kindermorgan.com/Notices/NoticeDetail.aspx?code=' + code + '&notc_nbr=' + idCell.trim();
+    }
     if (!noticeUrl && p && p.id === 'anr') {
       const idCell = cells.find(c => /^\s*\d{6,8}\s*$/.test(c));
-      if (idCell) noticeUrl = `https://ebb.anrpl.com/Notices/NoticeDetail.aspx?sPipelineCode=ANR&sNoticeID=${idCell.trim()}`;
+      if (idCell) noticeUrl = 'https://ebb.anrpl.com/Notices/NoticeDetail.aspx?sPipelineCode=ANR&sNoticeID=' + idCell.trim();
     }
     if (!noticeUrl && p && p.id === 'nng') {
       const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
-      if (idCell) noticeUrl = `https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=${idCell.trim()}`;
+      if (idCell) noticeUrl = 'https://northernnaturalgas.com/_layouts/15/NoticePopup.aspx?ID=' + idCell.trim();
     }
     if (!noticeUrl && p && p.id === 'sscgp') {
       const idCell = cells.find(c => /^\s*\d{4,8}\s*$/.test(c));
-      if (idCell) noticeUrl = `https://csi.southernstar.com/infoPosting/NoticeDetail?noticeId=${idCell.trim()}`;
+      if (idCell) noticeUrl = 'https://csi.southernstar.com/infoPosting/NoticeDetail?noticeId=' + idCell.trim();
     }
     if (!noticeUrl && p && p.id === 'nbpl') {
       const idCell = cells.find(c => /^\s*\d{6,9}\s*$/.test(c));
-      if (idCell) noticeUrl = `https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=${idCell.trim()}`;
+      if (idCell) noticeUrl = 'https://ebb.tceconnects.com/infopost/Default.aspx?assetid=51&pNoticeId=' + idCell.trim();
     }
     if (!noticeUrl && p && (p.id === 'pepl' || p.id === 'mrt')) {
       const asset = p.id === 'pepl' ? 'PEPL' : 'MRT';
       const idCell = cells.find(c => /^\s*\d{4,7}\s*$/.test(c));
-      if (idCell) noticeUrl = `https://peplmessenger.energytransfer.com/ipost/notice/detail/${idCell.trim()}?asset=${asset}`;
+      if (idCell) noticeUrl = 'https://peplmessenger.energytransfer.com/ipost/notice/detail/' + idCell.trim() + '?asset=' + asset;
     }
 
     const dateMatch = rowText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
@@ -633,13 +563,11 @@ function parseNotices(html, p) {
     return [{ title: notices[0].title, type: 'info', date: notices[0].date, url: notices[0].url }];
   }
 
-  // Fallback plain text scan
   if (notices.length === 0) {
     const text = clean.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ');
     for (const chunk of text.split(/[\n;]/)) {
       const t = chunk.trim();
-      if (t.length < 20 || t.length > 500) continue;
-      if (/carlton/i.test(t)) continue;
+      if (t.length < 20 || t.length > 500 || /carlton/i.test(t)) continue;
       const res = resolvedRe.test(t);
       let type = null;
       if (ofoRe.test(t) && !res) type = 'ofo';
