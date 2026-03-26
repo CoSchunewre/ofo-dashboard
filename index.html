@@ -347,10 +347,11 @@ const GROUPS = [
     ]
   }
 ];
-
 const ALL = GROUPS.flatMap(g => g.pipelines);
 let state = {};
 let activeFilter = 'all';
+
+
 
 function nowCT() { return new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Chicago'}); }
 function dateCT() { return new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',timeZone:'America/Chicago'}); }
@@ -586,3 +587,180 @@ function parseNotices(html, p) {
 }
 
 
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function nowCT() {
+  return new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Chicago'});
+}
+function dateCT() {
+  return new Date().toLocaleDateString('en-US',{weekday:'short',year:'numeric',month:'short',day:'numeric',timeZone:'America/Chicago'});
+}
+
+function pillInfo(status) {
+  return {
+    'ofo-active': {pill:'pill-o',dot:'pd-o',lbl:'OFO ACTIVE'},
+    'watching':   {pill:'pill-w',dot:'pd-w',lbl:'WATCH'},
+    'clear':      {pill:'pill-c',dot:'pd-c',lbl:'NO OFO'},
+    'loading':    {pill:'pill-l',dot:'pd-l',lbl:'LOADING'},
+    'unverified': {pill:'pill-u',dot:'pd-u',lbl:'VERIFY EBB'},
+  }[status] || {pill:'pill-n',dot:'pd-n',lbl:'NO OFO'};
+}
+
+function statusFromNotices(notices) {
+  if (!notices || !notices.length) return 'clear';
+  for (const n of notices) {
+    if (n.type === 'ofo')   return 'ofo-active';
+    if (n.type === 'watch') return 'watching';
+  }
+  return 'clear';
+}
+
+
+function renderCard(p, idx) {
+  const s = state[p.id];
+  const loading = !s;
+  const status = loading ? 'loading' : s.status;
+  const notices = s ? (s.notices||[]) : [];
+  const checked = s ? s.time : '';
+  const hidden = activeFilter !== 'all' && activeFilter !== status;
+  const pi = pillInfo(status);
+
+  const identHtml = `<div class="pi"><div><div class="pi-tick">${esc(p.ticker)}</div><div class="pi-full">${esc(p.full)}</div><div class="pi-own">${esc(p.owner||'')}</div></div><div class="pi-reg">${esc(p.region||'')}</div></div>`;
+
+  let noticeBody;
+  if (loading) {
+    noticeBody = '<div class="pn"><div class="sk sk85"></div><div class="sk sk70"></div></div>';
+  } else if (notices.length > 0) {
+    const rows = notices.slice(0,5).map(n => {
+      const pc = n.type==='ofo'?'pip-o':n.type==='watch'?'pip-w':'pip-i';
+      const titleHtml = n.url
+        ? `<a class="ntxt-link" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)} ↗</a>`
+        : `<div class="ntxt">${esc(n.title)}</div>`;
+      return `<div class="nrow"><div class="npip ${pc}"></div><div style="flex:1;min-width:0">${titleHtml}${n.date?`<div class="ndte">${esc(n.date)}</div>`:''}</div></div>`;
+    }).join('');
+    const more = notices.length > 5 ? `<div style="font-size:10px;color:var(--ink3);padding-top:5px">+ ${notices.length-5} more — see EBB</div>` : '';
+    noticeBody = `<div class="pn">${rows}${more}</div>`;
+  } else if (!p.fetch) {
+    noticeBody = `<div class="pn"><div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div></div>`;
+  } else if (s && s.fetchFailed) {
+    noticeBody = `<div class="pn"><div class="p-empty">No notices retrieved — click Open EBB to verify.</div></div>`;
+  } else {
+    noticeBody = `<div class="pn"><div class="p-empty">No critical notices found on public EBB.</div></div>`;
+  }
+
+  const statusHtml = `<div class="ps"><div><div class="pill ${pi.pill}"><div class="pd ${pi.dot}"></div>${pi.lbl}</div>${checked?`<div class="chk">Checked ${checked} CT</div>`:''}</div><a class="ebb-link" href="${esc(p.ebb)}" target="_blank" rel="noopener">↗ Open EBB</a></div>`;
+  return `<div class="pc" id="card-${p.id}" data-status="${status}" data-hidden="${hidden}" style="animation-delay:${idx*45}ms">${identHtml}${noticeBody}${statusHtml}</div>`;
+}
+
+function renderAll() {
+  const container = document.getElementById('cards');
+  let html = ''; let gIdx = 0;
+  for (const group of GROUPS) {
+    if (GROUPS.length > 1) html += `<div class="group-hdr" style="animation-delay:${gIdx*40}ms">${esc(group.label)}</div>`;
+    for (const p of group.pipelines) { html += renderCard(p, gIdx); gIdx++; }
+  }
+  container.innerHTML = html;
+}
+
+function updateCard(p) {
+  const el = document.getElementById(`card-${p.id}`); if (!el) return;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = renderCard(p, ALL.indexOf(p));
+  el.replaceWith(tmp.firstElementChild);
+}
+
+function updateSummary() {
+  let ofo=0,wat=0,clr=0,ntc=0;
+  ALL.forEach(p => { const s=state[p.id]; if(!s) return; if(s.status==='ofo-active') ofo++; else if(s.status==='watching') wat++; else clr++; ntc+=(s.notices||[]).length; });
+  document.getElementById('s-ofo').textContent=ofo;
+  document.getElementById('s-wat').textContent=wat;
+  document.getElementById('s-clr').textContent=clr;
+  document.getElementById('s-ntc').textContent=ntc;
+}
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.fb').forEach(b=>b.classList.remove('on')); btn.classList.add('on');
+  document.querySelectorAll('.pc').forEach(card => { card.dataset.hidden = (f!=='all' && f!==card.dataset.status) ? 'true' : 'false'; });
+}
+
+function tick() { document.getElementById('hdr-date').textContent=dateCT(); document.getElementById('hdr-time').textContent=nowCT(); }
+tick(); setInterval(tick,1000);
+
+async function refreshAll() {
+  const btn=document.getElementById('btn-ref'); const si=document.getElementById('si');
+  btn.disabled=true; si.classList.add('spinning');
+  state={}; renderAll();
+  document.getElementById('rt').textContent='Checking EBBs…';
+  const batchSize = 3;
+  for (let i = 0; i < ALL.length; i += batchSize) {
+    const batch = ALL.slice(i, i + batchSize);
+    await Promise.allSettled(batch.map(p => fetchPipeline(p).then(() => { updateCard(p); updateSummary(); })));
+    if (i + batchSize < ALL.length) await new Promise(r => setTimeout(r, 500));
+  }
+  document.getElementById('rt').textContent=`Last refreshed ${nowCT()} CT`;
+  btn.disabled=false; si.classList.remove('spinning');
+}
+
+let schedules=[]; let intervalMin=0; let intervalTid=null; let schedTid=null;
+
+function toggleArPanel() { document.getElementById('ar-panel').classList.toggle('open'); }
+document.addEventListener('click', e => { const w=document.querySelector('.ar-wrap'); if(w&&!w.contains(e.target)) document.getElementById('ar-panel').classList.remove('open'); });
+
+function addSchedule() {
+  const val=document.getElementById('ar-time1').value; if(!val||schedules.includes(val)) return;
+  schedules.push(val); schedules.sort(); renderScheduleList(); scheduleNextFire(); updateArBadge();
+}
+function removeSchedule(val) { schedules=schedules.filter(s=>s!==val); renderScheduleList(); scheduleNextFire(); updateArBadge(); }
+
+function renderScheduleList() {
+  const el=document.getElementById('ar-sched-list');
+  if(!schedules.length){el.innerHTML='<div style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:4px">No scheduled times yet.</div>';return;}
+  el.innerHTML=schedules.map(s=>`<div class="ar-sched-item"><span>⏰ ${formatTime12(s)} CT</span><button class="ar-del" onclick="removeSchedule('${s}')" title="Remove">✕</button></div>`).join('');
+}
+
+function formatTime12(hhmm) { const [h,m]=hhmm.split(':').map(Number); const ampm=h>=12?'PM':'AM'; const h12=h%12||12; return `${h12}:${String(m).padStart(2,'0')} ${ampm}`; }
+
+function saveInterval() {
+  const sel=document.getElementById('ar-interval'); intervalMin=parseInt(sel.value,10);
+  if(intervalTid){clearInterval(intervalTid);intervalTid=null;}
+  if(intervalMin>0) intervalTid=setInterval(refreshAll,intervalMin*60*1000);
+  updateArBadge(); scheduleNextFire();
+}
+
+function msUntilCT(hhmm) {
+  const now=new Date(); const ctStr=now.toLocaleString('en-US',{timeZone:'America/Chicago'}); const ct=new Date(ctStr);
+  const [h,m]=hhmm.split(':').map(Number); const target=new Date(ct); target.setHours(h,m,0,0);
+  if(target<=ct) target.setDate(target.getDate()+1); return target-ct;
+}
+
+function scheduleNextFire() {
+  if(schedTid){clearTimeout(schedTid);schedTid=null;} if(!schedules.length){updateNextLabel();return;}
+  const candidates=schedules.map(s=>({s,ms:msUntilCT(s)})); candidates.sort((a,b)=>a.ms-b.ms);
+  const next=candidates[0];
+  schedTid=setTimeout(()=>{refreshAll();scheduleNextFire();},next.ms);
+  updateNextLabel(next.s,next.ms);
+}
+
+function updateNextLabel(hhmm,ms) {
+  const el=document.getElementById('ar-next');
+  if(!hhmm){el.textContent=intervalMin>0?`Repeating every ${intervalMin} min.`:'';return;}
+  const mins=Math.round(ms/60000); const hrsText=mins>=60?`${Math.floor(mins/60)}h ${mins%60}m`:`${mins}m`;
+  const parts=[`Next scheduled: ${formatTime12(hhmm)} CT (in ~${hrsText})`];
+  if(intervalMin>0) parts.push(`+ every ${intervalMin} min.`);
+  el.textContent=parts.join(' · ');
+}
+
+function updateArBadge() {
+  const active=schedules.length>0||intervalMin>0; const badge=document.getElementById('ar-badge');
+  badge.textContent=active?'ON':'OFF'; badge.className='ar-badge '+(active?'ar-on':'ar-off');
+}
+
+renderScheduleList(); updateArBadge();
+renderAll(); updateSummary();
+window.addEventListener('load', () => { setTimeout(refreshAll, 800); });
+
+</script>
+</body>
+</html>
