@@ -553,11 +553,13 @@ function parseNotices(html, p) {
       !/^initiate$/i.test(c)
     ) || cells[cells.length - 1];
 
+    // ── Skip Carlton Resolution rows entirely for all pipelines ──
+    if (/carlton/i.test(rowText)) continue;
+
     // ── Only process OFO/alert rows ──
     const nngRe = /\b(operational alert|operational alert\/sol|operational alert\/sul|operational alert\/critical day|sol|sul)\b/i;
-    const isCarlton = /carlton/i.test(rowText);
-    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText) && !isCarlton;
-    const isOfoRow   = (ofoRe.test(rowText) && !isCarlton) || isNngOfo;
+    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText);
+    const isOfoRow   = ofoRe.test(rowText) || isNngOfo;
     const isWatchRow = watchRe.test(rowText);
     if (!isOfoRow && !isWatchRow) continue;
 
