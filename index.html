@@ -317,7 +317,7 @@ const GROUPS = [
         owner:'TC Energy',
         region:'Gulf Coast → Great Lakes / Canada',
         ebb:'https://ebb.anrpl.com/',
-        fetch:'https://ebb.anrpl.com/Notices/Notices.asp?sPipelineCode=ANR&sSubCategory=Critical',
+        fetch:'https://ebb.anrpl.com/',
         note:null,
       },
       {
@@ -493,9 +493,9 @@ function parseNotices(html, p) {
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
   // ── Keywords ──
-  const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn|sol|sul|operational alert)\b/i;
+  const ofoRe     = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
   const watchRe   = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo|inventory.*?(high|low))\b/i;
-  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled)\b/i;
+  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|ofo.*?removed|removed.*?ofo|ofo.*?lifted|ofo.*?terminated|ofo.*?rescinded|ofo.*?cancelled|carlton resolution)\b/i;
 
   // ── Determine base URL for relative link resolution ──
   let baseOrigin = '';
@@ -538,6 +538,7 @@ function parseNotices(html, p) {
     }
 
     if (cells.length < 2) continue;
+    if (rowText.length < 20) continue;
 
     const rowText = cells.join(' | ');
 
@@ -553,13 +554,17 @@ function parseNotices(html, p) {
     ) || cells[cells.length - 1];
 
     // ── Only process OFO/alert rows ──
-    const isOfoRow   = ofoRe.test(rowText);
+    const nngRe = /\b(operational alert|operational alert\/sol|operational alert\/sul|operational alert\/critical day|sol|sul)\b/i;
+    const isNngOfo = (p && p.id === 'nng') && nngRe.test(rowText);
+    const isOfoRow   = ofoRe.test(rowText) || isNngOfo;
     const isWatchRow = watchRe.test(rowText);
     if (!isOfoRow && !isWatchRow) continue;
 
-    // For NNG and similar: check if Notice Status cell says "Terminate"
-    const hasTerminateStatus = cells.some(c => /^terminate$/i.test(c.trim()));
-    const isResolved = resolvedRe.test(subject) || resolvedRe.test(rowText) || hasTerminateStatus;
+    // Check Notice Status cell: Terminate/Supersede = resolved, Initiate = active
+    const hasResolvedStatus = cells.some(c => /^(terminate|supersede|cancelled|expired)$/i.test(c.trim()));
+    const hasActiveStatus   = cells.some(c => /^initiate$/i.test(c.trim()));
+    // If explicitly Initiate, don't treat as resolved even if resolvedRe matches something else
+    const isResolved = (resolvedRe.test(subject) || resolvedRe.test(rowText) || hasResolvedStatus) && !hasActiveStatus;
 
     // ── Build notice URL ──
     // Priority 1: real href found in any cell
