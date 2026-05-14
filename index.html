@@ -464,7 +464,7 @@ function parseNotices(html, p) {
   const notices = [];
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'');
 
-  const ofoRe = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
+  const ofoRe = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn|underperformance|under[- ]performance)\b/i;
   const watchRe = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo)\b/i;
   const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|cancellation|resolved|spw terminated|weather alert lifted|carlton resolution)\b/i;
 
