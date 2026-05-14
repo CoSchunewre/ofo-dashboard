@@ -466,7 +466,7 @@ function parseNotices(html, p) {
 
   const ofoRe = /\b(ofo|operational flow order|flow order|strained operating|critical.*?day|imbalance.*?warn)\b/i;
   const watchRe = /\b(oper alert|operating alert|weather alert|high wind|freeze|cold weather|warm weather|spw|storage.*?warn|potential ofo)\b/i;
-  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|resolved|spw terminated|weather alert lifted|carlton resolution)\b/i;
+  const resolvedRe = /\b(report|removed|lifted|terminated|terminate|rescinded|cancelled|cancellation|resolved|spw terminated|weather alert lifted|carlton resolution)\b/i;
 
   let baseOrigin = '';
   if (p && p.ebb) { try { baseOrigin = new URL(p.ebb).origin; } catch(e) {} }
@@ -522,7 +522,11 @@ function parseNotices(html, p) {
 
     const hasResolvedStatus = cells.some(c => /^(terminate|supersede|cancelled|expired)$/i.test(c.trim()));
     const hasActiveStatus = cells.some(c => /^initiate$/i.test(c.trim()));
-    const isResolved = (resolvedRe.test(subject) || resolvedRe.test(rowText) || hasResolvedStatus) && !hasActiveStatus;
+    // Title-prefix override: a "Cancellation of …" / "Cancel …" notice means the underlying
+    // OFO is being cancelled, even if the cancellation row itself has status "Initiate".
+    // Applies to all KM-style EBBs (CIG, NGPL).
+    const titleStartsResolved = /^\s*(cancel(lation)?\b|cancel\s+of\b)/i.test(subject);
+    const isResolved = titleStartsResolved || ((resolvedRe.test(subject) || resolvedRe.test(rowText) || hasResolvedStatus) && !hasActiveStatus);
 
     let noticeUrl = cellUrls.find(u => u) || null;
 
