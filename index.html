@@ -454,8 +454,9 @@ async function fetchPipeline(p) {
     const notices = parseNotices(html, p);
     state[p.id] = {status:statusFromNotices(notices), notices, time:nowCT()};
   } catch(e) {
-    // Fetch failed — mark as unverified so user knows to check manually
-    state[p.id] = {status:'unverified', notices:[], time:nowCT(), fetchFailed:true};
+    // Fetch failed — per product invariant, show NO OFO (never an error state)
+    // to avoid false alarms from transient EBB outages.
+    state[p.id] = {status:'clear', notices:[], time:nowCT()};
   }
 }
 
