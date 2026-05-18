@@ -343,6 +343,9 @@ const GROUPS = [
         ebb:'https://ebb.tceconnects.com/infopost/',
         fetch:'https://ebb.tceconnects.com/infopost/',
         note:null,
+        // TC eConnects renders notices in a JS-driven nested-iframe ASP.NET app — plain HTTP fetch can't see them.
+        // Emit 'unverified' (yellow VERIFY EBB pill) instead of misleading green NO OFO until the email pipeline ships.
+        requiresDirectAccess:true,
       },
     ]
   }
@@ -440,6 +443,13 @@ const WORKER_URL = 'https://ofo-proxy.courtenay-schunemann.workers.dev';
 // ─────────────────────────────────────────────────────────────────────────
 
 async function fetchPipeline(p) {
+  if (p.requiresDirectAccess) {
+    // EBB is structurally unscrapable via plain HTTP (e.g. nested ASP.NET iframes with
+    // JS-driven content — TC eConnects / Northern Border). Emit 'unverified' so the user
+    // knows to check the EBB directly rather than trusting a falsely-green NO OFO card.
+    state[p.id] = {status:'unverified', notices:[], time:nowCT(), directRequired:true};
+    return;
+  }
   if (!p.fetch) { state[p.id]={status:'clear',notices:[],time:nowCT(),direct:true}; return; }
   try {
     const ctrl = new AbortController();
@@ -648,6 +658,8 @@ function renderCard(p, idx) {
     noticeBody = `<div class="pn">${rows}${more}</div>`;
   } else if (!p.fetch) {
     noticeBody = `<div class="pn"><div class="p-direct"><strong>Direct EBB access required.</strong><br>${esc(p.note||'')}</div></div>`;
+  } else if (s && s.directRequired) {
+    noticeBody = `<div class="pn"><div class="p-unverified">⚠ This EBB renders notices via a JS-driven browser session and can't be auto-checked from this dashboard. Click <strong>Open EBB</strong> to verify current status.</div></div>`;
   } else if (s && s.fetchFailed) {
     noticeBody = `<div class="pn"><div class="p-empty">No notices retrieved — click Open EBB to verify.</div></div>`;
   } else {
