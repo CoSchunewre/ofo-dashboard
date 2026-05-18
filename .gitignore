@@ -1,0 +1,16 @@
+# Token cache — contains auth tokens, never commit
+.token_cache.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+ofo_log.txt
+
+# Environment
+.env
+
+# Batch wrapper with API key
+run_ofo.bat
